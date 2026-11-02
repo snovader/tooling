@@ -314,7 +314,8 @@ function preparePnpConsumer(directory) {
     writeFileSync(join(directory, 'yarn.lock'), '');
     writeFileSync(
         join(directory, '.yarnrc.yml'),
-        'nodeLinker: pnp\nenableTelemetry: false\n'
+        // This temporary consumer creates its own lockfile, including in CI.
+        'nodeLinker: pnp\nenableTelemetry: false\nenableImmutableInstalls: false\n'
     );
     succeed(process.execPath, [yarn, 'install'], { cwd: directory });
 }
