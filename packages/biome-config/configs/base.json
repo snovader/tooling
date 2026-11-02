@@ -58,6 +58,11 @@
             "trailingCommas": "none"
         }
     },
+    "yaml": {
+        "formatter": {
+            "indentWidth": 2
+        }
+    },
     "overrides": [
         {
             "includes": ["**/*.test.ts", "**/*.test.tsx"],

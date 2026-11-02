@@ -59,6 +59,22 @@ The shared base does not choose `erasableSyntaxOnly`, JSX behavior outside the
 Preact preset, or application-specific module conditions. Set these locally when
 needed.
 
+To apply the same local options to several presets, put them in a file of their
+own and list it after the preset:
+
+```json
+{
+    "extends": [
+        "@snovader/tsconfig/tsconfig.node.json",
+        "./tsconfig.local.json"
+    ]
+}
+```
+
+Later entries win, so the local file overrides the preset wherever both set an
+option, including `types`, `lib`, and `jsx`. Do not give that file an `extends`
+of its own: it would apply the base's `types: []` again over the preset's.
+
 ## Yarn Plug'n'Play with native TypeScript 7
 
 Stock TypeScript 7.0.2 does not resolve this package through Yarn PnP. For a
@@ -72,8 +88,9 @@ yarn node -e "require('node:fs').cpSync(require('node:path').dirname(require.res
 Then extend `./.cache/tsconfig/tsconfig.base.json` or another preset, adjusting
 the relative path for nested configs. Run the copy after package updates and
 ignore `.cache/` in Git. This only makes the configuration available: resolving
-other PnP dependencies still depends on the compiler used by the consumer.
-Custom compiler builds may have different PnP support.
+other PnP dependencies still depends on the compiler used by the consumer. A
+compiler build with PnP support can extend the presets directly; check with
+`tsc --showConfig` before adding the copy.
 
 ## License
 
