@@ -1,0 +1,24 @@
+{
+    "version": 1,
+    "configs": [
+        {
+            "base": "./configs/base.json"
+        },
+        {
+            "preact": "./configs/preact.json"
+        }
+    ],
+    "plugins": {
+        "rules": [
+            {
+                "useArraySimple": "./rules/useArraySimple.grit"
+            },
+            {
+                "useExplicitReturnType": "./rules/useExplicitReturnType.grit"
+            }
+        ],
+        "presets": {
+            "recommended": ["useArraySimple", "useExplicitReturnType"]
+        }
+    }
+}

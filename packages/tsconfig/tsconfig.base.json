@@ -1,0 +1,26 @@
+{
+    "compilerOptions": {
+        "allowImportingTsExtensions": true,
+        "composite": true,
+        "declarationMap": false,
+        "emitDeclarationOnly": true,
+        "forceConsistentCasingInFileNames": true,
+        "isolatedModules": true,
+        "lib": ["ESNext"],
+        "module": "NodeNext",
+        "moduleDetection": "force",
+        "moduleResolution": "NodeNext",
+        "noImplicitOverride": true,
+        "noUncheckedSideEffectImports": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "pretty": true,
+        "resolveJsonModule": true,
+        "skipLibCheck": true,
+        "strict": true,
+        "target": "ESNext",
+        "types": [],
+        "useDefineForClassFields": true,
+        "verbatimModuleSyntax": true
+    }
+}

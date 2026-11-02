@@ -1,0 +1,24 @@
+{
+    "name": "snovader-tooling",
+    "private": true,
+    "type": "module",
+    "packageManager": "yarn@4.18.1",
+    "engines": {
+        "node": ">=24"
+    },
+    "workspaces": [
+        "packages/*"
+    ],
+    "scripts": {
+        "format:check": "biome format .",
+        "format:write": "biome format --write .",
+        "lint:check": "biome lint .",
+        "test": "node --test test/*.test.mjs",
+        "check": "yarn format:check && yarn lint:check && yarn test"
+    },
+    "devDependencies": {
+        "@biomejs/biome": "2.6.4",
+        "@types/node": "26.6.6",
+        "typescript": "7.0.2"
+    }
+}

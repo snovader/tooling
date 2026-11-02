@@ -1,0 +1,36 @@
+{
+    "name": "@snovader/biome-config",
+    "version": "0.1.0",
+    "description": "Shared Biome configuration and custom GritQL lint rules.",
+    "license": "MIT",
+    "type": "module",
+    "files": [
+        "biome-manifest.json",
+        "configs",
+        "rules"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/snovader/tooling.git",
+        "directory": "packages/biome-config"
+    },
+    "bugs": {
+        "url": "https://github.com/snovader/tooling/issues"
+    },
+    "homepage": "https://github.com/snovader/tooling/tree/main/packages/biome-config",
+    "publishConfig": {
+        "access": "public"
+    },
+    "keywords": [
+        "biome",
+        "biome-plugin",
+        "biome-config",
+        "gritql"
+    ],
+    "peerDependencies": {
+        "@biomejs/biome": ">=2.6.4 <3"
+    },
+    "exports": {
+        "biome": "./biome-manifest.json"
+    }
+}

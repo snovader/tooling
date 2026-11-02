@@ -1,0 +1,26 @@
+{
+    "name": "@snovader/tsconfig",
+    "version": "0.1.0",
+    "description": "Shared TypeScript compiler configurations.",
+    "license": "MIT",
+    "type": "module",
+    "files": [
+        "tsconfig.*.json"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/snovader/tooling.git",
+        "directory": "packages/tsconfig"
+    },
+    "bugs": {
+        "url": "https://github.com/snovader/tooling/issues"
+    },
+    "homepage": "https://github.com/snovader/tooling/tree/main/packages/tsconfig",
+    "publishConfig": {
+        "access": "public"
+    },
+    "keywords": [
+        "typescript",
+        "tsconfig"
+    ]
+}
