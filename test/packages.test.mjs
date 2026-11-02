@@ -132,6 +132,18 @@ test('packed base config formats TypeScript and loads its bundled rules', () => 
     assert.match(result.stderr, /Use T\[\]/);
 });
 
+test('packed base config indents YAML by two spaces', () => {
+    configureBiome({ extends: ['@snovader/biome-config/configs/base'] });
+    const formatted = succeed(
+        process.execPath,
+        [biome, 'format', '--stdin-file-path', 'example.yml'],
+        {
+            input: 'jobs:\n    check:\n        steps:\n            - run: test\n'
+        }
+    );
+    assert.equal(formatted, 'jobs:\n  check:\n    steps:\n      - run: test\n');
+});
+
 test('packed Preact config inherits formatting and JSX rules', () => {
     configureBiome({ extends: ['@snovader/biome-config/configs/preact'] });
     const result = lint(
@@ -292,6 +304,29 @@ test('consumer settings override shared options and keep paths local', () => {
     ]);
     assert.deepEqual(config.compilerOptions.types, ['node']);
     assert.equal(config.compilerOptions.erasableSyntaxOnly, true);
+});
+
+test('a local file listed after a preset adds options and keeps its types', () => {
+    writeJson(join(consumer, 'tsconfig.local.json'), {
+        compilerOptions: {
+            customConditions: ['example-source'],
+            erasableSyntaxOnly: true
+        }
+    });
+    writeJson(join(consumer, 'tsconfig.json'), {
+        extends: [
+            '@snovader/tsconfig/tsconfig.node.json',
+            './tsconfig.local.json'
+        ],
+        files: ['example.ts']
+    });
+    const config = JSON.parse(succeed(process.execPath, [tsc, '--showConfig']));
+    assert.deepEqual(config.compilerOptions.types, ['node']);
+    assert.deepEqual(config.compilerOptions.customConditions, [
+        'example-source'
+    ]);
+    assert.equal(config.compilerOptions.erasableSyntaxOnly, true);
+    assert.equal(config.compilerOptions.strict, true);
 });
 
 function preparePnpConsumer(directory) {

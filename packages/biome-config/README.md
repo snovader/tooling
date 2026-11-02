@@ -20,14 +20,15 @@ In `biome.json` or `biome.jsonc`:
 - `configs/base`: four-space indentation, single quotes, semicolons, no trailing
   commas, an 80-column default, selected lint rules, and both custom rules.
   Test files (`*.test.ts` and `*.test.tsx`) use 100 columns; TypeScript configs
-  use 60 columns. Assist actions are disabled.
+  use 60 columns. YAML uses two-space indentation. Assist actions are disabled.
 - `configs/preact`: the base plus JSX key and self-closing checks, hook checks,
   and stable-result recognition for `useSignal` and `useComputed`.
 
 Configuration plugins resolve relative to the declaring config, so consumers
 need neither copied `.grit` files nor hardcoded `node_modules` paths. Keep file
 selection, VCS settings, application-specific exceptions, and generated-code
-exclusions in the consuming repository.
+exclusions in the consuming repository. Its `linter.rules` and `overrides` add
+to the shared settings rather than replacing them.
 
 ## Rules without the shared formatting
 
