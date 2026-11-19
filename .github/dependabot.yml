@@ -1,0 +1,22 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directories:
+      - "/.github/actions/*"
+      - "/.github/workflows"
+    schedule:
+      interval: "daily"
+
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    groups:
+      # oxlint requires a version of oxlint-tsgolint, and oxfmt and oxc's
+      # packages, such as oxc-parser and oxc-transform, are released with it
+      "oxc":
+        patterns:
+          - "oxc-*"
+          - "oxfmt"
+          - "oxlint"
+          - "oxlint-tsgolint"
