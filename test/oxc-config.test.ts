@@ -41,7 +41,7 @@ const tarball = pack('@snovader/oxc-config', sandbox);
 installNodeModules(consumer, [tarball, 'hypotes@0.1.0']);
 const consumerOptions: Options = {
     cwd: consumer,
-    env: { OXLINT_TSGOLINT_PATH: join(ROOT, 'node_modules/.bin/tsgolint') }
+    env: { ...process.env, OXLINT_TSGOLINT_PATH: join(ROOT, 'node_modules/.bin/tsgolint') }
 };
 writeJson(join(consumer, 'tsconfig.json'), {
     compilerOptions: {

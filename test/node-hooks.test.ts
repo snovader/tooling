@@ -1,58 +1,70 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
 import {
     existsSync,
     mkdirSync,
-    mkdtempSync,
     readdirSync,
     readFileSync,
     realpathSync,
     rmSync,
     writeFileSync
 } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
-import { after, before, test } from 'node:test';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { dirname, join } from 'node:path';
+import { after, test } from 'node:test';
+import { pathToFileURL } from 'node:url';
+import {
+    createSandbox,
+    installNodeModules,
+    pack,
+    run,
+    succeed,
+    ROOT,
+    YARN,
+    type Options,
+    type Result
+} from './consumers.ts';
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const sandbox = mkdtempSync(join(tmpdir(), 'snovader-node-hooks-'));
-const consumer = join(sandbox, 'consumer');
-const yarn = join(root, '.yarn/releases/yarn-4.18.1.cjs');
-const packageDirectory = join(root, 'packages/node-hooks');
+/** A file's text, its bytes, or an object to write as JSON */
+type Content = string | Buffer | object;
+
+/** A case for the PnP resolve hook, which `pathProbe` runs */
+interface PathProbe {
+    readonly windows: boolean;
+    readonly files: Readonly<Record<string, unknown>>;
+    readonly specifier: string;
+    readonly parentURL: string;
+}
+
+interface PathCase {
+    readonly name: string;
+    readonly probe: PathProbe;
+    readonly expected: unknown;
+}
+
+const packageDirectory = join(ROOT, 'packages/node-hooks');
 const register = '@snovader/node-hooks/register';
 const entryPoints = ['register', 'typescript', 'bytes', 'cache', 'pnp'];
-const protectorInvalidation =
-    /Invalidating protector cell ArrayBufferDetaching/;
-let tarball;
+const protectorInvalidation = /Invalidating protector cell ArrayBufferDetaching/u;
 
-function run(command, args, options = {}) {
-    const result = spawnSync(command, args, {
-        cwd: consumer,
-        encoding: 'utf8',
-        ...options
-    });
-    assert.ifError(result.error);
-    assert.equal(result.signal, null, result.stderr);
-    return result;
+const sandbox = createSandbox();
+const consumer = join(sandbox, 'consumer');
+// Yarn packs the exports of publishConfig, which name the build
+const tarball = pack('@snovader/node-hooks', sandbox);
+installNodeModules(consumer, [tarball]);
+
+after(() => rmSync(sandbox, { recursive: true, force: true }));
+
+/** Runs Node in the consumer, unless told another directory */
+function node(args: readonly string[], options: Partial<Options> = {}): Result {
+    return run(process.execPath, args, { cwd: consumer, ...options });
 }
 
-function succeed(command, args, options = {}) {
-    const result = run(command, args, options);
-    assert.equal(result.status, 0, result.stdout + result.stderr);
-    return result.stdout;
-}
-
-function node(args, options = {}) {
-    return run(process.execPath, args, options);
-}
-
-function nodeJson(args, options = {}) {
-    return JSON.parse(succeed(process.execPath, args, options));
+/** Runs Node, which has to succeed, and parses the JSON that it prints */
+function nodeJson(args: readonly string[], options: Partial<Options> = {}): unknown {
+    return JSON.parse(succeed(process.execPath, args, { cwd: consumer, ...options }));
 }
 
 /** Writes files by path, with objects as JSON and buffers as bytes */
-function writeFiles(directory, files) {
+function writeFiles(directory: string, files: Readonly<Record<string, Content>>): void {
     for (const [path, content] of Object.entries(files)) {
         const file = join(directory, path);
         mkdirSync(dirname(file), { recursive: true });
@@ -66,7 +78,7 @@ function writeFiles(directory, files) {
 }
 
 /** A module of typed functions, larger than amaro's initial memory */
-function largeModule(functionCount, exportKeyword = 'export ') {
+function largeModule(functionCount: number, exportKeyword = 'export '): string {
     const functions = Array.from(
         { length: functionCount },
         (_, index) =>
@@ -75,42 +87,17 @@ function largeModule(functionCount, exportKeyword = 'export ') {
     return functions.join('\n');
 }
 
-function assertProtectorIntact(result) {
+function assertProtectorIntact(result: Result): void {
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /loaded/);
+    assert.match(result.stdout, /loaded/u);
     assert.doesNotMatch(result.stdout + result.stderr, protectorInvalidation);
 }
 
-before(() => {
-    mkdirSync(consumer);
-    // Yarn packs the exports of publishConfig, which name the build
-    tarball = join(sandbox, 'node-hooks.tgz');
-    succeed(process.execPath, [yarn, 'pack', '--out', tarball], {
-        cwd: packageDirectory
-    });
-
-    writeFiles(consumer, {
-        'package.json': { private: true, type: 'module' }
-    });
-    succeed('npm', [
-        'install',
-        '--ignore-scripts',
-        '--no-audit',
-        '--no-fund',
-        '--package-lock=false',
-        tarball
-    ]);
-});
-
-after(() => rmSync(sandbox, { recursive: true, force: true }));
-
 test('the packed package exports each hook from its build, with types', () => {
-    const installed = realpathSync(
-        join(consumer, 'node_modules/@snovader/node-hooks')
-    );
-    const { exports } = JSON.parse(
-        readFileSync(join(installed, 'package.json'), 'utf8')
-    );
+    const installed = realpathSync(join(consumer, 'node_modules/@snovader/node-hooks'));
+    const { exports } = JSON.parse(readFileSync(join(installed, 'package.json'), 'utf8')) as {
+        exports: unknown;
+    };
     assert.deepEqual(
         exports,
         Object.fromEntries(
@@ -130,32 +117,23 @@ test('the packed package exports each hook from its build, with types', () => {
 console.log(JSON.stringify(names.map(name => import.meta.resolve(\`@snovader/node-hooks/\${name}\`))));
 `
     });
-    const resolved = nodeJson(['entries/resolve.mjs']);
+    const resolved = nodeJson(['entries/resolve.mjs']) as string[];
     for (const [index, name] of entryPoints.entries()) {
-        assert.equal(
-            resolved[index],
-            pathToFileURL(join(installed, `dist/${name}.js`)).href
-        );
+        assert.equal(resolved[index], pathToFileURL(join(installed, `dist/${name}.js`)).href);
     }
 });
 
 test('packing with npm fails, as npm would keep the exports that name the source', () => {
     // npm keeps a user agent that it inherits, as from Yarn running the tests
-    const { npm_config_user_agent, ...env } = process.env;
+    const env = { ...process.env };
+    delete env.npm_config_user_agent;
     const result = run('npm', ['pack', '--pack-destination', sandbox], {
         cwd: packageDirectory,
         env
     });
     assert.notEqual(result.status, 0);
-    assert.match(
-        result.stderr,
-        /Pack and publish @snovader\/node-hooks with Yarn/
-    );
-    assert.ok(
-        !readdirSync(sandbox).some(file =>
-            file.startsWith('snovader-node-hooks-')
-        )
-    );
+    assert.match(result.stderr, /Pack and publish @snovader\/node-hooks with Yarn/u);
+    assert.ok(!readdirSync(sandbox).some(file => file.startsWith('snovader-node-hooks-')));
 });
 
 test('register loads TypeScript as ES modules and CommonJS by package type and extension', () => {
@@ -164,13 +142,11 @@ test('register loads TypeScript as ES modules and CommonJS by package type and e
         'formats/module/value.ts':
             "interface Named {\n    name: string;\n}\n\nconst value: Named = { name: 'module' };\nexport default value.name;\n",
         'formats/commonjs/package.json': { type: 'commonjs' },
-        'formats/commonjs/value.ts':
-            "const name: string = 'commonjs';\nmodule.exports = name;\n",
+        'formats/commonjs/value.ts': "const name: string = 'commonjs';\nmodule.exports = name;\n",
         'formats/untyped/package.json': {},
         'formats/untyped/value.ts': "export default 'untyped' as string;\n",
         'formats/value.mts': "export default 'mts' as string;\n",
-        'formats/value.cts':
-            "const name: string = 'cts';\nmodule.exports = name;\n",
+        'formats/value.cts': "const name: string = 'cts';\nmodule.exports = name;\n",
         'formats/entry.ts': `import { createRequire } from 'node:module';
 import moduleValue from './module/value.ts';
 import commonjsValue from './commonjs/value.ts';
@@ -198,23 +174,16 @@ test('register loads TypeScript inside node_modules, which Node refuses', () => 
             type: 'module',
             exports: './index.ts'
         },
-        'packaged/node_modules/typed/index.ts':
-            "export const source: string = 'package';\n",
+        'packaged/node_modules/typed/index.ts': "export const source: string = 'package';\n",
         'packaged/entry.mjs':
             "import { source } from 'typed';\n\nconsole.log(JSON.stringify(source));\n"
     });
 
-    assert.equal(
-        nodeJson(['--import', register, 'packaged/entry.mjs']),
-        'package'
-    );
+    assert.equal(nodeJson(['--import', register, 'packaged/entry.mjs']), 'package');
 
     const stripped = node(['packaged/entry.mjs']);
     assert.notEqual(stripped.status, 0);
-    assert.match(
-        stripped.stderr,
-        /ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING/
-    );
+    assert.match(stripped.stderr, /ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING/u);
 });
 
 test('register keeps an import of only inline types for its side effects, as Node does', () => {
@@ -249,19 +218,11 @@ test('register leaves the ArrayBufferDetaching protector intact for a large modu
     writeFiles(consumer, { 'protector/large.ts': source });
 
     assertProtectorIntact(
-        node([
-            '--trace-protector-invalidation',
-            '--import',
-            register,
-            'protector/large.ts'
-        ])
+        node(['--trace-protector-invalidation', '--import', register, 'protector/large.ts'])
     );
 
     // The same module through Node's own stripping shows that it's large enough
-    const stripped = node([
-        '--trace-protector-invalidation',
-        'protector/large.ts'
-    ]);
+    const stripped = node(['--trace-protector-invalidation', 'protector/large.ts']);
     assert.equal(stripped.status, 0, stripped.stderr);
     assert.match(
         stripped.stdout,
@@ -273,19 +234,12 @@ test('register leaves the ArrayBufferDetaching protector intact for a large modu
 test('register leaves the protector intact for large CommonJS that is required, or imported without Node stripping', () => {
     writeFiles(consumer, {
         'protector/large.cts': `${largeModule(150, '')}\nmodule.exports = { scale0 };\n`,
-        'protector/require.cjs':
-            "require('./large.cts');\nconsole.log('loaded');\n",
-        'protector/import.mjs':
-            "await import('./large.cts');\nconsole.log('loaded');\n"
+        'protector/require.cjs': "require('./large.cts');\nconsole.log('loaded');\n",
+        'protector/import.mjs': "await import('./large.cts');\nconsole.log('loaded');\n"
     });
 
     assertProtectorIntact(
-        node([
-            '--trace-protector-invalidation',
-            '--import',
-            register,
-            'protector/require.cjs'
-        ])
+        node(['--trace-protector-invalidation', '--import', register, 'protector/require.cjs'])
     );
     assertProtectorIntact(
         node([
@@ -312,14 +266,13 @@ export function fail(shape: Shape): never {
             "import { fail } from './thrower.ts';\n\ntry {\n    fail({ width: 1 });\n} catch (error) {\n    console.log((error as Error).stack);\n}\n"
     });
 
-    const stack = succeed(process.execPath, [
-        '--enable-source-maps',
-        '--import',
-        register,
-        'maps/entry.ts'
-    ]);
-    assert.match(stack, /thrower\.ts:6:11/);
-    assert.match(stack, /entry\.ts:4:5/);
+    const stack = succeed(
+        process.execPath,
+        ['--enable-source-maps', '--import', register, 'maps/entry.ts'],
+        { cwd: consumer }
+    );
+    assert.match(stack, /thrower\.ts:6:11/u);
+    assert.match(stack, /entry\.ts:4:5/u);
 });
 
 test('register fails a module with invalid syntax with a SyntaxError and a code frame', () => {
@@ -333,20 +286,18 @@ test('register fails a module with invalid syntax with a SyntaxError and a code 
 `
     });
 
-    const { name, message } = nodeJson([
-        '--import',
-        register,
-        'errors/entry.mjs'
-    ]);
+    const { name, message } = nodeJson(['--import', register, 'errors/entry.mjs']) as {
+        name: string;
+        message: string;
+    };
     assert.equal(name, 'SyntaxError');
-    assert.match(message, /Unexpected token/);
-    assert.match(message, /invalid\.ts:1:/);
+    assert.match(message, /Unexpected token/u);
+    assert.match(message, /invalid\.ts:1:/u);
 });
 
 test('register loads TypeScript from paths that URLs percent-encode', () => {
     writeFiles(consumer, {
-        'paths/with space/åäö/value.ts':
-            "export default 'encoded' as string;\n",
+        'paths/with space/åäö/value.ts': "export default 'encoded' as string;\n",
         'paths/entry.ts':
             "import value from './with space/åäö/value.ts';\n\nconsole.log(JSON.stringify(value));\n"
     });
@@ -371,14 +322,15 @@ export const view = <p title="greeting">{'hello'}</p>;
             "const { view } = await import('./view.tsx');\nconsole.log(JSON.stringify(view));\n"
     });
 
-    assert.deepEqual(
-        nodeJson(['--import', './jsx/register.mjs', 'jsx/entry.mjs']),
-        { type: 'p', props: { title: 'greeting' }, children: ['hello'] }
-    );
+    assert.deepEqual(nodeJson(['--import', './jsx/register.mjs', 'jsx/entry.mjs']), {
+        type: 'p',
+        props: { title: 'greeting' },
+        children: ['hello']
+    });
 
     const unhandled = node(['--import', register, 'jsx/entry.mjs']);
     assert.notEqual(unhandled.status, 0);
-    assert.match(unhandled.stderr, /ERR_UNKNOWN_FILE_EXTENSION/);
+    assert.match(unhandled.stderr, /ERR_UNKNOWN_FILE_EXTENSION/u);
 });
 
 test('bytes hook imports a file as a Uint8Array of its contents', () => {
@@ -400,10 +352,11 @@ console.log(JSON.stringify({
 `
     });
 
-    assert.deepEqual(
-        nodeJson(['--import', './bytes/register.mjs', 'bytes/entry.mjs']),
-        { isUint8Array: true, values: [0, 255, 10, 13, 128], same: true }
-    );
+    assert.deepEqual(nodeJson(['--import', './bytes/register.mjs', 'bytes/entry.mjs']), {
+        isUint8Array: true,
+        values: [0, 255, 10, 13, 128],
+        same: true
+    });
 });
 
 /**
@@ -440,7 +393,7 @@ try {
 }
 `;
 
-function probePaths(probeCase) {
+function probePaths(probeCase: PathProbe): unknown {
     writeFiles(consumer, { 'platform-paths/probe.mjs': pathProbe });
     return nodeJson(['platform-paths/probe.mjs', JSON.stringify(probeCase)]);
 }
@@ -448,7 +401,7 @@ function probePaths(probeCase) {
 // A relative path such as package.json would read the working directory's
 const workingDirectoryPackage = { 'package.json': { type: 'module' } };
 
-const pathCases = [
+const pathCases: readonly PathCase[] = [
     {
         name: 'Windows paths: PnP resolve reads package.json up to the drive root, not the working directory',
         probe: {
@@ -474,10 +427,7 @@ const pathCases = [
         expected: {
             url: 'file://server/share/dir/b.js',
             format: 'commonjs',
-            reads: [
-                '//server/share/dir/package.json',
-                '//server/share/package.json'
-            ]
+            reads: ['//server/share/dir/package.json', '//server/share/package.json']
         }
     },
     {
@@ -535,11 +485,7 @@ const pathCases = [
         expected: {
             url: 'file:///C:/outside/b.js',
             format: 'commonjs',
-            reads: [
-                '/C:/outside/package.json',
-                '/C:/package.json',
-                '/package.json'
-            ]
+            reads: ['/C:/outside/package.json', '/C:/package.json', '/package.json']
         }
     },
     {
@@ -553,11 +499,7 @@ const pathCases = [
         expected: {
             url: 'file:///project/back%5Cslash/value.js',
             format: 'commonjs',
-            reads: [
-                '/project/back\\slash/package.json',
-                '/project/package.json',
-                '/package.json'
-            ]
+            reads: ['/project/back\\slash/package.json', '/project/package.json', '/package.json']
         }
     },
     {
@@ -610,14 +552,11 @@ console.log(JSON.stringify({
 `
     });
 
-    assert.deepEqual(
-        nodeJson(['--import', './cache/register.mjs', 'cache/entry.ts']),
-        {
-            values: ['one', 'two'],
-            dual: ['import', 'require'],
-            builtin: 'function'
-        }
-    );
+    assert.deepEqual(nodeJson(['--import', './cache/register.mjs', 'cache/entry.ts']), {
+        values: ['one', 'two'],
+        dual: ['import', 'require'],
+        builtin: 'function'
+    });
 });
 
 test("Yarn PnP projects load TypeScript, and the PnP hooks resolve packages' exports and imports", () => {
@@ -642,8 +581,7 @@ test("Yarn PnP projects load TypeScript, and the PnP hooks resolve packages' exp
             }
         },
         // This temporary consumer creates its own lockfile, including in CI.
-        '.yarnrc.yml':
-            'nodeLinker: pnp\nenableTelemetry: false\nenableImmutableInstalls: false\n',
+        '.yarnrc.yml': 'nodeLinker: pnp\nenableTelemetry: false\nenableImmutableInstalls: false\n',
         'yarn.lock': '',
         'dual/package.json': {
             name: 'dual',
@@ -705,7 +643,7 @@ console.log(JSON.stringify({
 }));
 `
     });
-    succeed(process.execPath, [yarn, 'install'], { cwd: directory });
+    succeed(process.execPath, [YARN, 'install'], { cwd: directory });
 
     // Every hook resolves to its build through the exports that Yarn packed
     writeFiles(directory, {
@@ -715,38 +653,24 @@ console.log(JSON.stringify(names.map(name => require.resolve(\`@snovader/node-ho
     });
     const resolved = nodeJson(['--require', './.pnp.cjs', 'entries.cjs'], {
         cwd: directory
-    });
+    }) as string[];
     for (const [index, name] of entryPoints.entries()) {
         assert.match(
             resolved[index],
-            new RegExp(`[\\\\/]node-hooks[\\\\/]dist[\\\\/]${name}\\.js$`)
+            new RegExp(`[\\\\/]node-hooks[\\\\/]dist[\\\\/]${name}\\.js$`, 'u')
         );
     }
 
     assert.equal(
-        nodeJson(
-            [
-                '--require',
-                './.pnp.cjs',
-                '--import',
-                './typescript.mjs',
-                'internal.ts'
-            ],
-            { cwd: directory }
-        ),
+        nodeJson(['--require', './.pnp.cjs', '--import', './typescript.mjs', 'internal.ts'], {
+            cwd: directory
+        }),
         'internal'
     );
     assert.deepEqual(
-        nodeJson(
-            [
-                '--require',
-                './.pnp.cjs',
-                '--import',
-                './register.mjs',
-                'main.ts'
-            ],
-            { cwd: directory }
-        ),
+        nodeJson(['--require', './.pnp.cjs', '--import', './register.mjs', 'main.ts'], {
+            cwd: directory
+        }),
         {
             dual: ['import', 'require'],
             internal: 'internal',

@@ -15,7 +15,8 @@ export const YARN = join(ROOT, '.yarn/releases/yarn-4.18.1.cjs');
 export interface Options {
     readonly cwd: string;
     readonly input?: string;
-    readonly env?: Readonly<Record<string, string>>;
+    /** The whole environment, as spawnSync takes it: process.env by default */
+    readonly env?: NodeJS.ProcessEnv;
 }
 
 export interface Result {
@@ -33,7 +34,7 @@ export function run(
     const result = spawnSync(command, args, {
         cwd: options.cwd,
         encoding: 'utf8',
-        env: { ...process.env, ...options.env },
+        env: options.env,
         input: options.input
     });
     assert.ifError(result.error);
