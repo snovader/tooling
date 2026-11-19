@@ -60,7 +60,7 @@
         "./pnp": "./source/pnp.ts"
     },
     "scripts": {
-        "build": "tsc --project tsconfig.json",
+        "build": "tsc -p tsconfig.dist.json",
         "prepack": "node scripts/require-yarn.ts && yarn build"
     },
     "dependencies": {
@@ -75,6 +75,7 @@
         }
     },
     "devDependencies": {
+        "@snovader/tsconfig": "workspace:^",
         "resolve-pkg-maps": "^1.0.0",
         "typescript": "7.0.2"
     }

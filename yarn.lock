@@ -450,6 +450,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@snovader/node-hooks@workspace:packages/node-hooks"
   dependencies:
+    "@snovader/tsconfig": "workspace:^"
     oxc-transform: "npm:^0.159.0"
     resolve-pkg-maps: "npm:^1.0.0"
     typescript: "npm:7.0.2"
@@ -465,6 +466,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@snovader/oxc-config@workspace:packages/oxc-config"
   dependencies:
+    "@snovader/tsconfig": "workspace:^"
     oxfmt: "npm:^0.79.0"
     oxlint: "npm:^1.94.0"
     oxlint-tsgolint: "npm:^7.0.2007"
