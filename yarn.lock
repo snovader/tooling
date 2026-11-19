@@ -461,7 +461,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@snovader/oxc-config@workspace:packages/oxc-config":
+"@snovader/oxc-config@workspace:^, @snovader/oxc-config@workspace:packages/oxc-config":
   version: 0.0.0-use.local
   resolution: "@snovader/oxc-config@workspace:packages/oxc-config"
   dependencies:
@@ -486,7 +486,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@snovader/tsconfig@workspace:packages/tsconfig":
+"@snovader/tsconfig@workspace:^, @snovader/tsconfig@workspace:packages/tsconfig":
   version: 0.0.0-use.local
   resolution: "@snovader/tsconfig@workspace:packages/tsconfig"
   languageName: unknown
@@ -903,6 +903,8 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "snovader-tooling@workspace:."
   dependencies:
+    "@snovader/oxc-config": "workspace:^"
+    "@snovader/tsconfig": "workspace:^"
     "@types/node": "npm:^26.6.6"
     oxfmt: "npm:^0.79.0"
     oxlint: "npm:^1.94.0"

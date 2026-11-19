@@ -67,7 +67,7 @@
   "preferUnplugged": true,
   "scripts": {
     "build": "tsc -p tsconfig.dist.json",
-    "prepack": "node scripts/requireYarn.ts && yarn build"
+    "prepack": "node scripts/require-yarn.ts && yarn build"
   },
   "peerDependencies": {
     "hypotes": "^0.1.0",

@@ -15,6 +15,8 @@
     "typecheck": "tsc -p ."
   },
   "devDependencies": {
+    "@snovader/oxc-config": "workspace:^",
+    "@snovader/tsconfig": "workspace:^",
     "@types/node": "^26.6.6",
     "oxfmt": "^0.79.0",
     "oxlint": "^1.94.0",
