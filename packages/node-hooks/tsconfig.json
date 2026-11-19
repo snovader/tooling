@@ -5,6 +5,7 @@
         "declaration": true,
         "emitDeclarationOnly": false,
         "erasableSyntaxOnly": true,
+        "noEmit": false,
         "outDir": "./dist",
         "rewriteRelativeImportExtensions": true,
         "rootDir": "./source"
