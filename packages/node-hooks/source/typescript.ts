@@ -9,6 +9,7 @@ import type {
     TransformOptions,
     TransformResult
 } from 'oxc-transform';
+import type * as OxcTransform from 'oxc-transform';
 import { getFileFormat } from './internal/packages.ts';
 import { extnameFromUrl, fileUrlToPath, isFileUrl } from './internal/url.ts';
 
@@ -80,7 +81,7 @@ function languageOf(
             return jsx ? 'tsx' : undefined;
 
         default:
-            return;
+            return undefined;
     }
 }
 
@@ -145,19 +146,19 @@ function appendSourceMap(
     return `${code}\n//# sourceMappingURL=data:application/json;base64,${encoded}\n`;
 }
 
-let oxc: typeof import('oxc-transform') | undefined;
+let oxc: typeof OxcTransform | undefined;
 
 /**
  * Loads oxc on the first TypeScript file, through `require` so that Yarn
  * PnP's CommonJS resolution finds it without an ES module loader.
  */
-function loadOxc(): typeof import('oxc-transform') {
+function loadOxc(): typeof OxcTransform {
     if (oxc) {
         return oxc;
     }
 
     const require = createRequire(import.meta.url);
-    oxc = require('oxc-transform') as typeof import('oxc-transform');
+    oxc = require('oxc-transform') as typeof OxcTransform;
 
     return oxc;
 }

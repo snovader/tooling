@@ -63,7 +63,7 @@ export function readPackage(directory: string): PackageData | undefined {
         }
     });
 
-    return packageData || undefined;
+    return packageData === false ? undefined : packageData;
 }
 
 /**

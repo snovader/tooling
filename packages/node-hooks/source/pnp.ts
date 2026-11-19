@@ -26,7 +26,7 @@ interface PnpApi {
 // Yarn's runtime, `.pnp.cjs`, adds findPnpApi when it's loaded
 const findPnpApi = (
     module as typeof module & {
-        findPnpApi?(specifier: string): PnpApi | null;
+        findPnpApi?: (specifier: string) => PnpApi | null;
     }
 ).findPnpApi;
 
@@ -50,18 +50,18 @@ export const resolve: ResolveHookSync = (specifier, context, nextResolve) => {
         resolved = new URL(specifier, issuer).href;
     } else if (specifier[0] === '#') {
         resolved = resolvePrivateRequest(specifier, issuer, conditions);
-        if (!resolved) {
+        if (resolved === undefined) {
             return nextResolve(specifier, context);
         }
     } else {
         resolved = resolveRequest(specifier, issuer, conditions);
-        if (!resolved) {
+        if (resolved === undefined) {
             return nextResolve(specifier, context);
         }
     }
 
     resolved = resolveWithExtension(resolved);
-    if (!resolved) {
+    if (resolved === undefined) {
         return nextResolve(specifier, context);
     }
 
@@ -108,7 +108,7 @@ function resolveRequest(
     const subpath = parts.slice(sliceIndex).join('/');
 
     const unqualified = tryResolveToUnqualified(packageName, specifier, issuer);
-    if (!unqualified) {
+    if (unqualified === undefined || unqualified === '') {
         return;
     }
 
@@ -247,7 +247,7 @@ function loadResolvePkgMaps(): typeof ResolvePkgMaps {
         'resolve-pkg-maps',
         import.meta.url
     );
-    if (!resolved) {
+    if (resolved === undefined || resolved === '') {
         throw new Error(
             "@snovader/node-hooks/pnp needs its peer dependency 'resolve-pkg-maps' to resolve packages' exports and imports"
         );
