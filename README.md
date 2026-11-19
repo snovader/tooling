@@ -1,13 +1,15 @@
 # snovader tooling
 
-Shared Biome and TypeScript configuration, published as two independently
-versioned npm packages. They contain only configuration and GritQL files: there
-is nothing to build and nothing added to an application's runtime.
+Shared development tooling, published as independently versioned npm
+packages. The Biome and TypeScript configurations contain only configuration
+and GritQL files, with nothing to build. The Node.js module hooks are compiled
+to JavaScript when packed.
 
-| Package                                         | Contents                                               |
-| ----------------------------------------------- | ------------------------------------------------------ |
-| [@snovader/biome-config](packages/biome-config) | Formatting, lint settings, and two custom GritQL rules |
-| [@snovader/tsconfig](packages/tsconfig)         | Strict compiler settings with environment presets      |
+| Package                                         | Contents                                                           |
+| ----------------------------------------------- | ------------------------------------------------------------------ |
+| [@snovader/biome-config](packages/biome-config) | Formatting, lint settings, and two custom GritQL rules             |
+| [@snovader/tsconfig](packages/tsconfig)         | Strict compiler settings with environment presets                  |
+| [@snovader/node-hooks](packages/node-hooks)     | TypeScript stripping with oxc, byte imports, and Yarn PnP for Node |
 
 ## Usage
 
@@ -39,7 +41,15 @@ And from `tsconfig.json`:
 }
 ```
 
-The package READMEs list every preset and rule.
+Start Node with the TypeScript hook, which strips types without detaching
+array buffers as Node's own stripping does:
+
+```sh
+npm install @snovader/node-hooks
+node --no-strip-types --import @snovader/node-hooks/register app.ts
+```
+
+The package READMEs list every preset, rule, and hook.
 
 ## What stays local
 
@@ -74,10 +84,14 @@ yarn check
 If `yarn` is missing or runs another version, use
 `node .yarn/releases/yarn-4.18.1.cjs` instead.
 
-`yarn check` runs Biome on this repository, then packs both packages and
-installs the tarballs in temporary npm and Yarn PnP projects. The tests cover
-formatting, rule diagnostics and fixes, and TypeScript inheritance and
-compilation.
+`yarn check` runs Biome on this repository and builds the module hooks. It
+then packs the packages and installs the tarballs in temporary npm and Yarn
+PnP projects. The tests cover:
+
+- formatting, and rule diagnostics and fixes;
+- TypeScript inheritance and compilation;
+- modules loaded through the hooks, including a check that V8's
+  ArrayBufferDetaching protector stays intact.
 
 ## Releasing
 
@@ -88,7 +102,14 @@ or compiler setting can break consumers, so release it as a breaking change.
 yarn check
 npm pack --dry-run ./packages/biome-config
 npm pack --dry-run ./packages/tsconfig
+yarn workspace @snovader/node-hooks pack --dry-run
 ```
+
+Pack and publish the module hooks with Yarn, which builds them first through
+their `prepack` script. In this repository, their `exports` name the
+TypeScript source, and Yarn replaces them with those of `publishConfig`, which
+name the build. npm keeps the source's exports, which the package leaves out,
+so the `prepack` script refuses to run under npm.
 
 After reviewing the contents, publish from an npm account with access to the
 `@snovader` scope:
@@ -96,6 +117,7 @@ After reviewing the contents, publish from an npm account with access to the
 ```sh
 npm publish ./packages/biome-config
 npm publish ./packages/tsconfig
+yarn workspace @snovader/node-hooks npm publish
 ```
 
 Publishing may ask for a two-factor code. CI only runs checks; pushing never

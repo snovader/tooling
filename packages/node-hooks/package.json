@@ -1,0 +1,81 @@
+{
+    "name": "@snovader/node-hooks",
+    "version": "0.1.0",
+    "description": "Synchronous Node.js module hooks: TypeScript stripping with oxc, byte imports, a resolution cache, and Yarn Plug'n'Play resolution.",
+    "license": "MIT",
+    "type": "module",
+    "files": [
+        "dist"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/snovader/tooling.git",
+        "directory": "packages/node-hooks"
+    },
+    "bugs": {
+        "url": "https://github.com/snovader/tooling/issues"
+    },
+    "homepage": "https://github.com/snovader/tooling/tree/main/packages/node-hooks",
+    "publishConfig": {
+        "access": "public",
+        "exports": {
+            "./register": {
+                "types": "./dist/register.d.ts",
+                "default": "./dist/register.js"
+            },
+            "./typescript": {
+                "types": "./dist/typescript.d.ts",
+                "default": "./dist/typescript.js"
+            },
+            "./bytes": {
+                "types": "./dist/bytes.d.ts",
+                "default": "./dist/bytes.js"
+            },
+            "./cache": {
+                "types": "./dist/cache.d.ts",
+                "default": "./dist/cache.js"
+            },
+            "./pnp": {
+                "types": "./dist/pnp.d.ts",
+                "default": "./dist/pnp.js"
+            }
+        }
+    },
+    "keywords": [
+        "node",
+        "module-hooks",
+        "typescript",
+        "type-stripping",
+        "oxc",
+        "yarn-pnp"
+    ],
+    "engines": {
+        "node": ">=26"
+    },
+    "exports": {
+        "./register": "./source/register.ts",
+        "./typescript": "./source/typescript.ts",
+        "./bytes": "./source/bytes.ts",
+        "./cache": "./source/cache.ts",
+        "./pnp": "./source/pnp.ts"
+    },
+    "scripts": {
+        "build": "tsc --project tsconfig.json",
+        "prepack": "node scripts/require-yarn.ts && yarn build"
+    },
+    "dependencies": {
+        "oxc-transform": "^0.159.0"
+    },
+    "peerDependencies": {
+        "resolve-pkg-maps": "^1.0.0"
+    },
+    "peerDependenciesMeta": {
+        "resolve-pkg-maps": {
+            "optional": true
+        }
+    },
+    "devDependencies": {
+        "resolve-pkg-maps": "^1.0.0",
+        "typescript": "7.0.2"
+    }
+}

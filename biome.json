@@ -2,6 +2,6 @@
     "$schema": "https://biomejs.dev/schemas/2.6.4/schema.json",
     "extends": ["./packages/biome-config/configs/base.json"],
     "files": {
-        "includes": ["**", "!.yarn", "!.cache", "!**/package.json"]
+        "includes": ["**", "!.yarn", "!.cache", "!**/dist", "!**/package.json"]
     }
 }
