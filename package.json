@@ -13,8 +13,9 @@
         "format:check": "biome format .",
         "format:write": "biome format --write .",
         "lint:check": "biome lint .",
+        "build": "yarn workspace @snovader/node-hooks build",
         "test": "node --test test/*.test.mjs",
-        "check": "yarn format:check && yarn lint:check && yarn test"
+        "check": "yarn format:check && yarn lint:check && yarn build && yarn test"
     },
     "devDependencies": {
         "@biomejs/biome": "2.6.4",
