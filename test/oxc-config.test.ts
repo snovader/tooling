@@ -289,6 +289,21 @@ describe('packed oxlint base configuration', () => {
             'unicorn(no-new-array)'
         ]);
     });
+
+    it('names files in kebab-case, whatever they export', () => {
+        const source = 'export class ExampleModule {}\n';
+        assert.deepEqual(codesOf(lint('exampleModule.ts', source), 'unicorn(filename-case)'), [
+            'unicorn(filename-case)'
+        ]);
+        assert.deepEqual(codesOf(lint('ExampleModule.ts', source), 'unicorn(filename-case)'), [
+            'unicorn(filename-case)'
+        ]);
+        assert.deepEqual(codesOf(lint('example-module.ts', source), 'unicorn(filename-case)'), []);
+        assert.deepEqual(
+            codesOf(lint('example-module.test.ts', source), 'unicorn(filename-case)'),
+            []
+        );
+    });
 });
 
 // The plugin of the packed package, which consumers load through the base

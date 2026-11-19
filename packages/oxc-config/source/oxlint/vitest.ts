@@ -6,14 +6,8 @@ import type { OxlintConfig } from 'oxlint';
 const config = {
     plugins: ['vitest'],
     rules: {
-        // Tests, which a helper whose name starts with `expect` asserts for
-        // too
-        'vitest/no-focused-tests': 'error',
-        'vitest/no-disabled-tests': 'error',
-        'vitest/warn-todo': 'error',
-        'vitest/no-conditional-tests': 'error',
-        'vitest/valid-title': 'error',
-        'vitest/valid-describe-callback': 'error',
+        // Each test asserts, assertions name and call their matchers, and
+        // helpers whose names start with `expect` assert
         'vitest/expect-expect': [
             'error',
             { assertFunctionNames: ['expect*', 'assert', 'assertType'] }
@@ -25,8 +19,17 @@ const config = {
         // `toBe` compares with Object.is, which tells -0 from 0
         'vitest/prefer-to-be': 'error',
         'vitest/prefer-to-have-length': 'error',
-        'vitest/hoisted-apis-on-top': 'error',
-        'vitest/require-mock-type-parameters': 'error'
+        // Every test runs, declared unconditionally, with a valid title, and
+        // describe blocks declare them in functions written in place
+        'vitest/no-focused-tests': 'error',
+        'vitest/no-disabled-tests': 'error',
+        'vitest/warn-todo': 'error',
+        'vitest/no-conditional-tests': 'error',
+        'vitest/valid-title': 'error',
+        'vitest/valid-describe-callback': 'error',
+        // Mocks are typed, and hoisted from where they're written
+        'vitest/require-mock-type-parameters': 'error',
+        'vitest/hoisted-apis-on-top': 'error'
     }
 } satisfies OxlintConfig;
 

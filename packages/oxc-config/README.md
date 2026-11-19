@@ -62,7 +62,11 @@ overrides. The project's own `rules` and `overrides` come last.
   plugins, with type-aware rules and unused disable directives reported, and
   a selection of style and restriction rules. The rules that TypeScript
   reports itself are off, and so are those that limit length or require
-  JSDoc tags for every parameter. Each setting has a comment that says why.
+  JSDoc tags for every parameter. Files are named in kebab-case, whatever
+  they export, so that an import path reads the same on file systems that
+  ignore case: a project with other names renames its files, or turns
+  `unicorn/filename-case` off for them. Each setting has a comment that says
+  why.
   Configuration files (`*.config.ts`) may export defaults, tests may allocate
   arrays of holes and pass callbacks that return values where nothing is
   returned, and JavaScript files don't need `readonly`.
