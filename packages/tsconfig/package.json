@@ -4,6 +4,16 @@
     "description": "Shared TypeScript compiler configurations.",
     "license": "MIT",
     "type": "module",
+    "exports": {
+        "./base": "./tsconfig.base.json",
+        "./composite": "./tsconfig.composite.json",
+        "./node": "./tsconfig.node.json",
+        "./isomorphic": "./tsconfig.isomorphic.json",
+        "./web": "./tsconfig.web.json",
+        "./web-preact": "./tsconfig.web-preact.json",
+        "./cloudflare-workers": "./tsconfig.cloudflare-workers.json",
+        "./cloudflare-workers/test": "./tsconfig.cloudflare-workers-test.json"
+    },
     "files": [
         "tsconfig.*.json"
     ],

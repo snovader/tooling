@@ -8,36 +8,80 @@ npm install --save-dev typescript @snovader/tsconfig
 
 ```json
 {
-    "extends": "@snovader/tsconfig/tsconfig.node.json",
-    "compilerOptions": {
-        "rootDir": "./source",
-        "outDir": "./dist"
-    },
-    "include": ["source/**/*.ts"]
+    "extends": "@snovader/tsconfig/node",
+    "include": ["source/**/*.ts", "test/**/*.ts"]
 }
 ```
 
+The presets typecheck without emitting files. See
+[Emitting JavaScript](#emitting-javascript) and
+[Project references](#project-references) for builds.
+
 ## Presets
 
-| File                                    | Environment                                                                  |
-| --------------------------------------- | ---------------------------------------------------------------------------- |
-| `tsconfig.base.json`                    | ESNext, NodeNext modules/resolution, strict checking, explicit ambient types |
-| `tsconfig.node.json`                    | Base plus Node ambient types                                                 |
-| `tsconfig.isomorphic.json`              | Base plus WebWorker libraries, without DOM globals                           |
-| `tsconfig.web.json`                     | Base plus DOM libraries                                                      |
-| `tsconfig.web-preact.json`              | Web plus Preact JSX transform                                                |
-| `tsconfig.cloudflare-workers.json`      | Base plus Cloudflare Worker ambient types                                    |
-| `tsconfig.cloudflare-workers-test.json` | Workers plus Cloudflare Vitest plugin types                                  |
+Extend a preset by its package subpath:
 
-All presets inherit the base. It enables `composite`, declaration-only emit,
-TypeScript import extensions, isolated modules, verbatim module syntax,
-unused-local and unused-parameter checks, and implicit-override checks. It sets
-`types: []` so unrelated installed ambient types do not leak into the project.
+| Subpath                                      | File                                    | Environment                                                                  |
+| -------------------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------- |
+| `@snovader/tsconfig/base`                    | `tsconfig.base.json`                    | ESNext, NodeNext modules/resolution, strict checking, explicit ambient types |
+| `@snovader/tsconfig/node`                    | `tsconfig.node.json`                    | Base plus Node ambient types                                                 |
+| `@snovader/tsconfig/isomorphic`              | `tsconfig.isomorphic.json`              | Base plus the WebWorker library, without DOM globals                         |
+| `@snovader/tsconfig/web`                     | `tsconfig.web.json`                     | Base plus the DOM library                                                    |
+| `@snovader/tsconfig/web-preact`              | `tsconfig.web-preact.json`              | Web plus Preact JSX transform                                                |
+| `@snovader/tsconfig/cloudflare-workers`      | `tsconfig.cloudflare-workers.json`      | Base plus Cloudflare Worker ambient types                                    |
+| `@snovader/tsconfig/cloudflare-workers/test` | `tsconfig.cloudflare-workers-test.json` | Workers plus Cloudflare Vitest plugin types                                  |
+| `@snovader/tsconfig/composite`               | `tsconfig.composite.json`               | Declaration-only composite builds, listed after another preset               |
+
+The package `exports` only these subpaths. Package paths to the files, such as
+`@snovader/tsconfig/tsconfig.node.json`, do not resolve. The file names matter
+only for a copied configuration (see
+[Yarn Plug'n'Play](#yarn-plugnplay-with-native-typescript-7)).
+
+The environment presets inherit the base. It sets `noEmit`, TypeScript import
+extensions, isolated modules, verbatim module syntax, unused-local and
+unused-parameter checks, and implicit-override checks. It sets `types: []` so
+unrelated installed ambient types do not leak into the project.
+
+Strict checking and checked side-effect imports are TypeScript 7 defaults, so
+the base does not restate `strict` or `noUncheckedSideEffectImports`. Set them
+locally when type checking with an older compiler.
+
+TypeScript 7's `lib.dom.iterable`, `lib.dom.asynciterable`,
+`lib.webworker.iterable` and `lib.webworker.asynciterable` are empty, so the
+web and isomorphic presets list only `DOM` and `WebWorker`; iteration over DOM
+collections and streams is typed by those libraries.
+
+The base also turns these warnings into errors:
+
+| Option                             | Effect                                                           |
+| ---------------------------------- | ---------------------------------------------------------------- |
+| `allowUnreachableCode: false`      | Unreachable code is an error, not an editor suggestion           |
+| `allowUnusedLabels: false`         | Unused labels are an error, not an editor suggestion             |
+| `noFallthroughCasesInSwitch: true` | A non-empty `switch` case must not fall through to the next case |
+| `erasableSyntaxOnly: true`         | TypeScript-only syntax with runtime behavior is an error         |
+
+`erasableSyntaxOnly` rejects `enum` declarations, namespaces and modules with
+runtime code, parameter properties, `import =` and `export =` assignments, and
+angle-bracket type assertions such as `<number>value`. The remaining syntax can
+be stripped without transformation, as Node.js type stripping does. To use
+those constructs, turn it off locally:
+
+```json
+{
+    "extends": "@snovader/tsconfig/node",
+    "compilerOptions": {
+        "erasableSyntaxOnly": false
+    }
+}
+```
+
+Set `allowUnreachableCode` or `allowUnusedLabels` to `null` to return to
+TypeScript's default, which reports them as editor suggestions, or to `true` to
+stop reporting them. Set `noFallthroughCasesInSwitch` to `false` to allow
+fallthrough.
 
 The compiler target and libraries use ESNext. Libraries intended for older
 runtimes should select an explicit distribution target in their build config.
-For JavaScript emit, set `emitDeclarationOnly: false` and, when using `.ts`
-import extensions, `rewriteRelativeImportExtensions: true`.
 
 Install the environment dependencies used by your selected preset:
 
@@ -48,6 +92,51 @@ Install the environment dependencies used by your selected preset:
 
 These are consumer dependencies, not dependencies of this config package.
 
+## Emitting JavaScript
+
+To compile to JavaScript, turn `noEmit` off and let TypeScript rewrite the
+`.ts` import extensions that the base allows:
+
+```json
+{
+    "extends": "@snovader/tsconfig/node",
+    "compilerOptions": {
+        "noEmit": false,
+        "rewriteRelativeImportExtensions": true,
+        "rootDir": "./source",
+        "outDir": "./dist"
+    },
+    "include": ["source/**/*.ts"]
+}
+```
+
+Add `"declaration": true` for declaration files. Projects whose sources import
+`.js` paths can set `allowImportingTsExtensions: false` instead of rewriting.
+
+## Project references
+
+For a monorepo built with `tsc --build`, list the composite preset after the
+environment preset in each referenced project:
+
+```json
+{
+    "extends": ["@snovader/tsconfig/node", "@snovader/tsconfig/composite"],
+    "compilerOptions": {
+        "rootDir": ".",
+        "outDir": "./dist"
+    },
+    "include": ["*.ts"],
+    "references": [{ "path": "../shared" }]
+}
+```
+
+The composite preset has no `extends` of its own. It sets `composite: true`,
+`emitDeclarationOnly: true` and `noEmit: false`, so `tsc --build` writes
+declaration files and build information, and `.ts` imports stay allowed. Keep
+it last: listed before the environment preset, the base's `noEmit` wins and
+TypeScript writes only build information. For JavaScript output as well, add
+`emitDeclarationOnly: false` and `rewriteRelativeImportExtensions: true`.
+
 ## Local settings
 
 Declare `include`, `exclude`, `files`, `references`, `rootDir`, `outDir`,
@@ -55,19 +144,15 @@ Declare `include`, `exclude`, `files`, `references`, `rootDir`, `outDir`,
 repository. Relative paths are resolved from the config that declares them.
 `types` and other arrays replace inherited arrays rather than appending.
 
-The shared base does not choose `erasableSyntaxOnly`, JSX behavior outside the
-Preact preset, or application-specific module conditions. Set these locally when
-needed.
+The shared base does not choose JSX behavior outside the Preact preset or
+application-specific module conditions. Set these locally when needed.
 
 To apply the same local options to several presets, put them in a file of their
 own and list it after the preset:
 
 ```json
 {
-    "extends": [
-        "@snovader/tsconfig/tsconfig.node.json",
-        "./tsconfig.local.json"
-    ]
+    "extends": ["@snovader/tsconfig/node", "./tsconfig.local.json"]
 }
 ```
 
@@ -77,20 +162,24 @@ of its own: it would apply the base's `types: []` again over the preset's.
 
 ## Yarn Plug'n'Play with native TypeScript 7
 
-Stock TypeScript 7.0.2 does not resolve this package through Yarn PnP. For a
-configuration on disk, materialize it after installation:
+Stock TypeScript 7.0.2 does not resolve this package through Yarn PnP, with or
+without the subpaths. For a configuration on disk, materialize it after
+installation:
 
 ```sh
 yarn unplug @snovader/tsconfig
-yarn node -e "require('node:fs').cpSync(require('node:path').dirname(require.resolve('@snovader/tsconfig/tsconfig.base.json')), '.cache/tsconfig', { recursive: true })"
+yarn node -e "require('node:fs').cpSync(require('node:path').dirname(require.resolve('@snovader/tsconfig/base')), '.cache/tsconfig', { recursive: true })"
 ```
 
-Then extend `./.cache/tsconfig/tsconfig.base.json` or another preset, adjusting
-the relative path for nested configs. Run the copy after package updates and
-ignore `.cache/` in Git. This only makes the configuration available: resolving
-other PnP dependencies still depends on the compiler used by the consumer. A
-compiler build with PnP support can extend the presets directly; check with
-`tsc --showConfig` before adding the copy.
+Then extend `./.cache/tsconfig/tsconfig.base.json` or another preset's file
+from the table above, adjusting the relative path for nested configs. Run the
+copy after package updates and ignore `.cache/` in Git. This only makes the
+configuration available: resolving other PnP dependencies still depends on the
+compiler used by the consumer. A compiler build with PnP support can extend the
+subpaths directly; check with `tsc --showConfig` before adding the copy, and
+confirm that the output includes the inherited options, since TypeScript 7.0.2
+prints an empty configuration instead of failing when `extends` does not
+resolve.
 
 ## License
 
