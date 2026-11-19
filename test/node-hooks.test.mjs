@@ -1,16 +1,27 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readdirSync,
+    readFileSync,
+    realpathSync,
+    rmSync,
+    writeFileSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { after, before, test } from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const sandbox = mkdtempSync(join(tmpdir(), 'snovader-node-hooks-'));
 const consumer = join(sandbox, 'consumer');
 const yarn = join(root, '.yarn/releases/yarn-4.18.1.cjs');
+const packageDirectory = join(root, 'packages/node-hooks');
 const register = '@snovader/node-hooks/register';
+const entryPoints = ['register', 'typescript', 'bytes', 'cache', 'pnp'];
 const protectorInvalidation =
     /Invalidating protector cell ArrayBufferDetaching/;
 let tarball;
@@ -72,14 +83,11 @@ function assertProtectorIntact(result) {
 
 before(() => {
     mkdirSync(consumer);
-    const output = succeed('npm', [
-        'pack',
-        join(root, 'packages/node-hooks'),
-        '--json',
-        '--pack-destination',
-        sandbox
-    ]);
-    tarball = join(sandbox, Object.values(JSON.parse(output))[0].filename);
+    // Yarn packs the exports of publishConfig, which name the build
+    tarball = join(sandbox, 'node-hooks.tgz');
+    succeed(process.execPath, [yarn, 'pack', '--out', tarball], {
+        cwd: packageDirectory
+    });
 
     writeFiles(consumer, {
         'package.json': { private: true, type: 'module' }
@@ -95,6 +103,60 @@ before(() => {
 });
 
 after(() => rmSync(sandbox, { recursive: true, force: true }));
+
+test('the packed package exports each hook from its build, with types', () => {
+    const installed = realpathSync(
+        join(consumer, 'node_modules/@snovader/node-hooks')
+    );
+    const { exports } = JSON.parse(
+        readFileSync(join(installed, 'package.json'), 'utf8')
+    );
+    assert.deepEqual(
+        exports,
+        Object.fromEntries(
+            entryPoints.map(name => [
+                `./${name}`,
+                { types: `./dist/${name}.d.ts`, default: `./dist/${name}.js` }
+            ])
+        )
+    );
+    for (const name of entryPoints) {
+        assert.ok(existsSync(join(installed, `dist/${name}.d.ts`)), name);
+    }
+    assert.ok(!existsSync(join(installed, 'source')));
+
+    writeFiles(consumer, {
+        'entries/resolve.mjs': `const names = ${JSON.stringify(entryPoints)};
+console.log(JSON.stringify(names.map(name => import.meta.resolve(\`@snovader/node-hooks/\${name}\`))));
+`
+    });
+    const resolved = nodeJson(['entries/resolve.mjs']);
+    for (const [index, name] of entryPoints.entries()) {
+        assert.equal(
+            resolved[index],
+            pathToFileURL(join(installed, `dist/${name}.js`)).href
+        );
+    }
+});
+
+test('packing with npm fails, as npm would keep the exports that name the source', () => {
+    // npm keeps a user agent that it inherits, as from Yarn running the tests
+    const { npm_config_user_agent, ...env } = process.env;
+    const result = run('npm', ['pack', '--pack-destination', sandbox], {
+        cwd: packageDirectory,
+        env
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(
+        result.stderr,
+        /Pack and publish @snovader\/node-hooks with Yarn/
+    );
+    assert.ok(
+        !readdirSync(sandbox).some(file =>
+            file.startsWith('snovader-node-hooks-')
+        )
+    );
+});
 
 test('register loads TypeScript as ES modules and CommonJS by package type and extension', () => {
     writeFiles(consumer, {
@@ -644,6 +706,22 @@ console.log(JSON.stringify({
 `
     });
     succeed(process.execPath, [yarn, 'install'], { cwd: directory });
+
+    // Every hook resolves to its build through the exports that Yarn packed
+    writeFiles(directory, {
+        'entries.cjs': `const names = ${JSON.stringify(entryPoints)};
+console.log(JSON.stringify(names.map(name => require.resolve(\`@snovader/node-hooks/\${name}\`))));
+`
+    });
+    const resolved = nodeJson(['--require', './.pnp.cjs', 'entries.cjs'], {
+        cwd: directory
+    });
+    for (const [index, name] of entryPoints.entries()) {
+        assert.match(
+            resolved[index],
+            new RegExp(`[\\\\/]node-hooks[\\\\/]dist[\\\\/]${name}\\.js$`)
+        );
+    }
 
     assert.equal(
         nodeJson(

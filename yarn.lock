@@ -263,6 +263,7 @@ __metadata:
   dependencies:
     oxc-transform: "npm:^0.159.0"
     resolve-pkg-maps: "npm:^1.0.0"
+    typescript: "npm:7.0.2"
   peerDependencies:
     resolve-pkg-maps: ^1.0.0
   peerDependenciesMeta:

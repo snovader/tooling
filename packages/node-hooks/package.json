@@ -17,7 +17,29 @@
     },
     "homepage": "https://github.com/snovader/tooling/tree/main/packages/node-hooks",
     "publishConfig": {
-        "access": "public"
+        "access": "public",
+        "exports": {
+            "./register": {
+                "types": "./dist/register.d.ts",
+                "default": "./dist/register.js"
+            },
+            "./typescript": {
+                "types": "./dist/typescript.d.ts",
+                "default": "./dist/typescript.js"
+            },
+            "./bytes": {
+                "types": "./dist/bytes.d.ts",
+                "default": "./dist/bytes.js"
+            },
+            "./cache": {
+                "types": "./dist/cache.d.ts",
+                "default": "./dist/cache.js"
+            },
+            "./pnp": {
+                "types": "./dist/pnp.d.ts",
+                "default": "./dist/pnp.js"
+            }
+        }
     },
     "keywords": [
         "node",
@@ -31,16 +53,15 @@
         "node": ">=26"
     },
     "exports": {
-        "./register": "./dist/register.js",
-        "./typescript": "./dist/typescript.js",
-        "./bytes": "./dist/bytes.js",
-        "./cache": "./dist/cache.js",
-        "./pnp": "./dist/pnp.js",
-        "./package.json": "./package.json"
+        "./register": "./source/register.ts",
+        "./typescript": "./source/typescript.ts",
+        "./bytes": "./source/bytes.ts",
+        "./cache": "./source/cache.ts",
+        "./pnp": "./source/pnp.ts"
     },
     "scripts": {
         "build": "tsc --project tsconfig.json",
-        "prepack": "tsc --project tsconfig.json"
+        "prepack": "node scripts/require-yarn.ts && yarn build"
     },
     "dependencies": {
         "oxc-transform": "^0.159.0"
@@ -54,6 +75,7 @@
         }
     },
     "devDependencies": {
-        "resolve-pkg-maps": "^1.0.0"
+        "resolve-pkg-maps": "^1.0.0",
+        "typescript": "7.0.2"
     }
 }

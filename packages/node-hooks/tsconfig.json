@@ -7,7 +7,7 @@
         "erasableSyntaxOnly": true,
         "outDir": "./dist",
         "rewriteRelativeImportExtensions": true,
-        "rootDir": "./src"
+        "rootDir": "./source"
     },
-    "include": ["src"]
+    "include": ["source"]
 }

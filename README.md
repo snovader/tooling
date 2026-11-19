@@ -102,11 +102,14 @@ or compiler setting can break consumers, so release it as a breaking change.
 yarn check
 npm pack --dry-run ./packages/biome-config
 npm pack --dry-run ./packages/tsconfig
-npm pack --dry-run ./packages/node-hooks
+yarn workspace @snovader/node-hooks pack --dry-run
 ```
 
-Packing or publishing the module hooks builds them first, through their
-`prepack` script.
+Pack and publish the module hooks with Yarn, which builds them first through
+their `prepack` script. In this repository, their `exports` name the
+TypeScript source, and Yarn replaces them with those of `publishConfig`, which
+name the build. npm keeps the source's exports, which the package leaves out,
+so the `prepack` script refuses to run under npm.
 
 After reviewing the contents, publish from an npm account with access to the
 `@snovader` scope:
@@ -114,7 +117,7 @@ After reviewing the contents, publish from an npm account with access to the
 ```sh
 npm publish ./packages/biome-config
 npm publish ./packages/tsconfig
-npm publish ./packages/node-hooks
+yarn workspace @snovader/node-hooks npm publish
 ```
 
 Publishing may ask for a two-factor code. CI only runs checks; pushing never
