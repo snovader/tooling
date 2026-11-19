@@ -10,8 +10,8 @@ under the `@snovader` scope as three packages, each with a version of its own:
 | [@snovader/node-hooks](packages/node-hooks) | Node module hooks: TypeScript stripped with oxc, byte imports, and Yarn PnP   |
 
 The configurations hold what suits any project. A project extends them, and
-adds its own paths and exceptions. `@snovader/oxc-config` and
-`@snovader/node-hooks` need Node 26 or later.
+adds its own paths and exceptions. `@snovader/oxc-config` needs Node 26 or
+later, and `@snovader/node-hooks` Node 24.12 or later.
 
 ## Quick start
 

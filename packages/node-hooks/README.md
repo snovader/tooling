@@ -11,7 +11,9 @@ Synchronous Node.js module hooks for `module.registerHooks`:
 npm install @snovader/node-hooks
 ```
 
-Requires Node.js 26 or later.
+Requires Node.js 24.12 or later. Earlier releases of Node 24 have no
+`--no-strip-types`, and before 24.6 Node passes the hooks no array of
+conditions for a `require()`, which the cache and PnP hooks read.
 
 ## Why
 
@@ -19,8 +21,8 @@ Node strips types with amaro, which is swc compiled to WebAssembly. Its memory
 grows for a file larger than about 1.2–1.7 KB, and growing it detaches an
 `ArrayBuffer`. Detaching any buffer invalidates V8's ArrayBufferDetaching
 protector for the rest of the process. From then on, optimized code checks
-every typed-array access for a detached buffer. This happens in Node 26.13
-and Node 27.0.0-alpha alike.
+every typed-array access for a detached buffer. This happens in Node 24.12,
+Node 26.13, and Node 27.0.0-alpha alike.
 
 The TypeScript hook strips types with oxc's native transform instead, which
 detaches nothing. The package itself is compiled JavaScript, so registering
