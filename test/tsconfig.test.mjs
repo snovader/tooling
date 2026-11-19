@@ -119,10 +119,9 @@ before(() => {
 after(() => rmSync(sandbox, { recursive: true, force: true }));
 
 for (const preset of Object.keys(presets)) {
-    test(`packed TypeScript ${preset} subpath resolves and inherits strict typechecking`, () => {
+    test(`packed TypeScript ${preset} subpath resolves and inherits the base options`, () => {
         configure(`@snovader/tsconfig/${preset}`);
         const config = showConfig();
-        assert.equal(config.strict, true);
         assert.equal(config.module, 'nodenext');
         assert.equal(config.noEmit, true);
         assert.equal(config.composite, undefined);
@@ -233,6 +232,27 @@ export function check(value: number): number {
     assert.match(result.stdout, /checks\.ts\(11,5\): error TS7027/);
 });
 
+test("base relies on TypeScript 7's strict and side-effect import checks", () => {
+    writeFileSync(
+        join(consumer, 'defaults.ts'),
+        `import './missing.js';
+export function identity(value) {
+    return value;
+}
+export const count: number = null;
+`
+    );
+    configure('@snovader/tsconfig/base', {}, 'defaults.ts');
+    const config = showConfig();
+    assert.equal(config.strict, undefined);
+    assert.equal(config.noUncheckedSideEffectImports, undefined);
+    const result = compile();
+    assert.notEqual(result.status, 0);
+    assert.match(result.stdout, /defaults\.ts\(1,8\): error TS2882/);
+    assert.match(result.stdout, /defaults\.ts\(2,26\): error TS7006/);
+    assert.match(result.stdout, /defaults\.ts\(5,14\): error TS2322/);
+});
+
 test('consumers can turn erasableSyntaxOnly off', () => {
     writeFileSync(
         join(consumer, 'enum.ts'),
@@ -309,7 +329,7 @@ test('composite preset listed after an environment preset builds project referen
     assert.equal(config.allowImportingTsExtensions, true);
     assert.deepEqual(config.types, ['node']);
     assert.equal(config.erasableSyntaxOnly, true);
-    assert.equal(config.strict, true);
+    assert.equal(config.noImplicitOverride, true);
 
     for (let build = 0; build < 2; build++)
         succeed(process.execPath, [tsc, '--build'], { cwd: monorepo });
@@ -355,7 +375,7 @@ test('a local file listed after a preset adds options and keeps its types', () =
     assert.deepEqual(config.types, ['node']);
     assert.deepEqual(config.customConditions, ['example-source']);
     assert.equal(config.erasableSyntaxOnly, false);
-    assert.equal(config.strict, true);
+    assert.equal(config.noImplicitOverride, true);
 });
 
 test('Yarn PnP resolves preset subpaths and inherits materialized presets', () => {

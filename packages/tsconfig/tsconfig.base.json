@@ -11,13 +11,11 @@
         "noEmit": true,
         "noFallthroughCasesInSwitch": true,
         "noImplicitOverride": true,
-        "noUncheckedSideEffectImports": true,
         "noUnusedLocals": true,
         "noUnusedParameters": true,
         "pretty": true,
         "resolveJsonModule": true,
         "skipLibCheck": true,
-        "strict": true,
         "target": "ESNext",
         "types": [],
         "verbatimModuleSyntax": true

@@ -40,11 +40,16 @@ only for a copied configuration (see
 The environment presets inherit the base. It sets `noEmit`, TypeScript import
 extensions, isolated modules, verbatim module syntax, unused-local and
 unused-parameter checks, and implicit-override checks. It sets `types: []` so
-unrelated installed ambient types do not leak into the project. TypeScript 7's
-`lib.dom.iterable`, `lib.dom.asynciterable`, `lib.webworker.iterable` and
-`lib.webworker.asynciterable` are empty, so the web and isomorphic presets list
-only `DOM` and `WebWorker`; iteration over DOM collections and streams is typed
-by those libraries.
+unrelated installed ambient types do not leak into the project.
+
+Strict checking and checked side-effect imports are TypeScript 7 defaults, so
+the base does not restate `strict` or `noUncheckedSideEffectImports`. Set them
+locally when type checking with an older compiler.
+
+TypeScript 7's `lib.dom.iterable`, `lib.dom.asynciterable`,
+`lib.webworker.iterable` and `lib.webworker.asynciterable` are empty, so the
+web and isomorphic presets list only `DOM` and `WebWorker`; iteration over DOM
+collections and streams is typed by those libraries.
 
 The base also turns these warnings into errors:
 
