@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+
+  # The release workflow runs the same checks before it publishes
+  workflow_call:
+
+# Read-only, unless a job asks for more
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout GitHub repo
+        uses: actions/checkout@v7
+
+      - name: Prepare dependencies
+        uses: ./.github/actions/prepare-node-dependencies
+
+      - name: Find the scripts
+        id: scripts
+        run: node -p "'names=' + JSON.stringify(Object.keys(require('./package.json').scripts))" >> "$GITHUB_OUTPUT"
+
+      - name: Run format check
+        run: yarn format:check
+
+      - name: Run lint check
+        run: yarn lint:check
+
+      # Once package.json has a `typecheck` script
+      - name: Run type check
+        if: contains(fromJSON(steps.scripts.outputs.names), 'typecheck')
+        run: yarn typecheck
+
+  test:
+    name: Test (${{ matrix.os }}, Node ${{ matrix.node_version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # Each platform has its own builds of the tools that the tests run on
+        # the packed packages. Windows, whose paths and file URLs differ the
+        # most, joins once the tests run there: they start `npm` by name, which
+        # Windows has only as npm.cmd.
+        os: [ubuntu-latest, macos-latest]
+        # The oldest version that `engines` names, and the latest
+        node_version: ["26.0.0", "26.x"]
+    steps:
+      - name: Checkout GitHub repo
+        uses: actions/checkout@v7
+
+      - name: Prepare dependencies
+        uses: ./.github/actions/prepare-node-dependencies
+        with:
+          node-version: ${{ matrix.node_version }}
+
+      # Packs each package, installs the tarballs in temporary npm and Yarn PnP
+      # projects, and runs the tools on them
+      - name: Run tests
+        run: yarn test
+
+  # The check for the main branch's ruleset to require. It passes when every
+  # job passed.
+  checks:
+    name: Checks
+    needs: [verify, test]
+    # Runs after a failure too, since GitHub counts a skipped required check as
+    # passed
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail if a job failed or was cancelled
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1

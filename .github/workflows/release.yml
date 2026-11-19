@@ -1,0 +1,100 @@
+name: Release
+
+# Publishes one of the packages to npm when a release is published on GitHub.
+# Each package has a version of its own, and the release's tag names the
+# package's directory under packages/ and the version in its package.json, as
+# tsconfig/v1.2.3. Once CI's checks pass on the tag, the job publishes that
+# package alone. npm's trusted publishing authenticates the job, rather than a
+# token, and the package carries the provenance of its build.
+
+on:
+  release:
+    types:
+      - published
+
+# Read-only, unless a job asks for more
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Check the version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      package: ${{ steps.tag.outputs.package }}
+      name: ${{ steps.tag.outputs.name }}
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - name: Checkout GitHub repo
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check that the tag names a package and the version in its package.json
+        id: tag
+        run: |
+          if [[ ! "$TAG" =~ ^([a-z0-9-]+)/v[^/]+$ ]]; then
+            echo "::error::The tag $TAG doesn't name a package and its version, as tsconfig/v1.2.3 does"
+            exit 1
+          fi
+          package="${BASH_REMATCH[1]}"
+          manifest="packages/$package/package.json"
+          if [[ ! -f "$manifest" ]]; then
+            echo "::error::The tag $TAG names the package $package, but there's no $manifest"
+            exit 1
+          fi
+          name="$(node -p "require('./' + process.argv[1]).name" "$manifest")"
+          version="$(node -p "require('./' + process.argv[1]).version" "$manifest")"
+          if [[ "$TAG" != "$package/v$version" ]]; then
+            echo "::error::The tag $TAG doesn't name version $version from $manifest, whose tag is $package/v$version"
+            exit 1
+          fi
+          {
+            echo "package=$package"
+            echo "name=$name"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+
+  ci:
+    name: CI
+    needs: version
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publish
+    needs: [version, ci]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Which npm's trusted publisher can name, and whose protection rules can
+    # restrict publishing to the release tags
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/${{ needs.version.outputs.name }}/v/${{ needs.version.outputs.version }}
+    permissions:
+      contents: read
+      # For trusted publishing, and to sign the provenance
+      id-token: write
+    steps:
+      - name: Checkout GitHub repo
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Prepare dependencies
+        uses: ./.github/actions/prepare-node-dependencies
+
+      # With no npmAuthToken configured, Yarn exchanges the job's OIDC token for
+      # one that publishes the package
+      - name: Publish to npm
+        working-directory: packages/${{ needs.version.outputs.package }}
+        run: yarn npm publish --provenance --tag "$DIST_TAG"
+        env:
+          # A pre-release on GitHub goes under `next`, so that installing the
+          # package without a version still gets the latest release
+          DIST_TAG: ${{ github.event.release.prerelease && 'next' || 'latest' }}
+          # npm's registry itself, rather than registry.yarnpkg.com, Yarn's
+          # default, which proxies it
+          YARN_NPM_PUBLISH_REGISTRY: https://registry.npmjs.org
