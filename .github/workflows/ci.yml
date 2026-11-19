@@ -59,8 +59,9 @@ jobs:
         # most, joins once the tests run there: they start `npm` by name, which
         # Windows has only as npm.cmd.
         os: [ubuntu-latest, macos-latest]
-        # The oldest version that `engines` names, and the latest
-        node_version: ["26.0.0", "26.x"]
+        # The oldest versions that the packages' `engines` name, 24.12.0 for
+        # node-hooks and 26.0.0 for oxc-config, and the latest of each line
+        node_version: ["24.12.0", "24.x", "26.0.0", "26.x"]
     steps:
       - name: Checkout GitHub repo
         uses: actions/checkout@v7

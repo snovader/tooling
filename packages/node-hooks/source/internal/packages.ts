@@ -45,25 +45,33 @@ export function readPackageScope(urlString: string): PackageData | undefined {
 
 /** Reads the package.json in a directory, a path with forward slashes */
 export function readPackage(directory: string): PackageData | undefined {
-    const packageData = packageCache.getOrInsertComputed(directory, () => {
-        try {
-            // path.join would turn the // of a UNC share into /
-            const content = fs.readFileSync(
-                `${directory === '/' ? '' : directory}/package.json`,
-                'utf8'
-            );
-
-            const { type, main, module, exports, imports } = JSON.parse(
-                content
-            ) as PackageData;
-
-            return { directory, type, main, module, exports, imports };
-        } catch {
-            return false;
-        }
-    });
+    // Node 24 has no Map.prototype.getOrInsertComputed
+    let packageData = packageCache.get(directory);
+    if (packageData === undefined) {
+        packageData = readPackageFile(directory);
+        packageCache.set(directory, packageData);
+    }
 
     return packageData === false ? undefined : packageData;
+}
+
+/** Reads a directory's package.json, or gives false where it has none */
+function readPackageFile(directory: string): PackageData | false {
+    try {
+        // path.join would turn the // of a UNC share into /
+        const content = fs.readFileSync(
+            `${directory === '/' ? '' : directory}/package.json`,
+            'utf8'
+        );
+
+        const { type, main, module, exports, imports } = JSON.parse(
+            content
+        ) as PackageData;
+
+        return { directory, type, main, module, exports, imports };
+    } catch {
+        return false;
+    }
 }
 
 /**

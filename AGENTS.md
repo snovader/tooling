@@ -184,9 +184,13 @@ intent, not a requirement to preserve every detail.
 
 ## Package and runtime
 
-- The packages support the versions of Node that their `engines` name. CI
-  tests Node 26.0.0, the oldest, and the latest Node 26. Use a built-in only
-  when every one of them has it.
+- The packages support the versions of Node that their `engines` name:
+  `@snovader/node-hooks` Node 24.12 and later, and `@snovader/oxc-config`
+  Node 26 and later. CI tests the oldest of each, Node 24.12.0 and 26.0.0,
+  and the latest Node 24 and 26. Use a built-in only when every version
+  that the package supports has it: Node 24 has no
+  `Map.prototype.getOrInsertComputed`, for one, and TypeScript's `ESNext`
+  library doesn't tell.
 - Node runs the repository's TypeScript as it is, by stripping its types:
   the tests, the configurations of oxfmt and oxlint, and the source of
   `@snovader/oxc-config`, which they import. So use only erasable syntax,
@@ -258,7 +262,7 @@ intent, not a requirement to preserve every detail.
   package and runs the tests on the tarballs. `yarn check` runs the four in
   turn, and `yarn format:write` and `yarn lint:write` fix what they can.
   `.github/workflows/ci.yml` runs the same checks in CI, and the tests on
-  Node 26.0.0 and the latest Node 26, on Ubuntu and macOS. Its `Checks` job
+  Node 24.12.0, 26.0.0, and the latest Node 24 and 26, on Ubuntu and macOS. Its `Checks` job
   passes when every other job passed, and is the check that `main`'s ruleset
   requires of a pull request.
 - Use the Yarn release in `.yarn/releases`, which `.yarnrc.yml` names. The

@@ -22,8 +22,12 @@ export const resolve: ResolveHookSync = (specifier, context, nextResolve) => {
             : path.dirname(parentURL);
     const cacheKey = `${specifier}|${parentDirectory}|${conditions.join(',')}`;
 
-    return resolveCache.getOrInsertComputed(cacheKey, () => ({
-        ...nextResolve(specifier, context),
-        shortCircuit: true
-    }));
+    // Node 24 has no Map.prototype.getOrInsertComputed
+    let resolution = resolveCache.get(cacheKey);
+    if (resolution === undefined) {
+        resolution = { ...nextResolve(specifier, context), shortCircuit: true };
+        resolveCache.set(cacheKey, resolution);
+    }
+
+    return resolution;
 };
