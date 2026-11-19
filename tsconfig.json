@@ -1,0 +1,14 @@
+{
+    // The repository's TypeScript, which tsc checks and tsgolint lints with
+    // type information: the packages' source and scripts, the tests, and
+    // the configurations of oxfmt and oxlint
+    "extends": "@snovader/tsconfig/node",
+    "include": [
+        "*.config.ts",
+        "packages/node-hooks/scripts",
+        "packages/node-hooks/source",
+        "packages/oxc-config/scripts",
+        "packages/oxc-config/source",
+        "test"
+    ]
+}

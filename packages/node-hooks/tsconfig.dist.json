@@ -1,0 +1,14 @@
+{
+    // The modules that the package publishes, which tsc compiles to `dist`
+    // with their declarations, and which the exports of package.json's
+    // publishConfig name
+    "extends": "@snovader/tsconfig/node",
+    "compilerOptions": {
+        "declaration": true,
+        "noEmit": false,
+        "outDir": "dist",
+        "rewriteRelativeImportExtensions": true,
+        "rootDir": "source"
+    },
+    "include": ["source"]
+}

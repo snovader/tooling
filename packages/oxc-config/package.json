@@ -1,0 +1,99 @@
+{
+  "name": "@snovader/oxc-config",
+  "version": "0.1.0",
+  "description": "Shared oxfmt and oxlint configuration, with presets for Vitest, hypotes and Preact.",
+  "keywords": [
+    "oxc",
+    "oxfmt",
+    "oxlint",
+    "oxlint-config",
+    "oxlint-plugin"
+  ],
+  "license": "MIT",
+  "author": "snovader",
+  "homepage": "https://github.com/snovader/tooling/tree/main/packages/oxc-config#readme",
+  "bugs": {
+    "url": "https://github.com/snovader/tooling/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/snovader/tooling.git",
+    "directory": "packages/oxc-config"
+  },
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=26"
+  },
+  "exports": {
+    "./oxfmt": "./source/oxfmt.ts",
+    "./oxlint": "./source/oxlint/index.ts",
+    "./oxlint/hypotes": "./source/oxlint/hypotes.ts",
+    "./oxlint/plugin": "./source/oxlint/plugin.ts",
+    "./oxlint/preact": "./source/oxlint/preact.ts",
+    "./oxlint/vitest": "./source/oxlint/vitest.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      "./oxfmt": {
+        "types": "./dist/oxfmt.d.ts",
+        "default": "./dist/oxfmt.js"
+      },
+      "./oxlint": {
+        "types": "./dist/oxlint/index.d.ts",
+        "default": "./dist/oxlint/index.js"
+      },
+      "./oxlint/hypotes": {
+        "types": "./dist/oxlint/hypotes.d.ts",
+        "default": "./dist/oxlint/hypotes.js"
+      },
+      "./oxlint/plugin": {
+        "types": "./dist/oxlint/plugin.d.ts",
+        "default": "./dist/oxlint/plugin.js"
+      },
+      "./oxlint/preact": {
+        "types": "./dist/oxlint/preact.d.ts",
+        "default": "./dist/oxlint/preact.js"
+      },
+      "./oxlint/vitest": {
+        "types": "./dist/oxlint/vitest.d.ts",
+        "default": "./dist/oxlint/vitest.js"
+      }
+    }
+  },
+  "preferUnplugged": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.dist.json",
+    "prepack": "node scripts/require-yarn.ts && yarn build"
+  },
+  "peerDependencies": {
+    "hypotes": "^0.1.0",
+    "oxfmt": "^0.79.0",
+    "oxlint": "^1.94.0",
+    "oxlint-tsgolint": "^7.0.2007"
+  },
+  "peerDependenciesMeta": {
+    "hypotes": {
+      "optional": true
+    },
+    "oxfmt": {
+      "optional": true
+    },
+    "oxlint": {
+      "optional": true
+    },
+    "oxlint-tsgolint": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@snovader/tsconfig": "workspace:^",
+    "oxfmt": "^0.79.0",
+    "oxlint": "^1.94.0",
+    "oxlint-tsgolint": "^7.0.2007",
+    "typescript": "^7.0.2"
+  }
+}

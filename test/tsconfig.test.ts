@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
 import {
     existsSync,
-    mkdtempSync,
     mkdirSync,
     readdirSync,
     readFileSync,
@@ -10,17 +8,49 @@ import {
     symlinkSync,
     writeFileSync
 } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
-import { after, before, test } from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { after, test } from 'node:test';
+import {
+    createSandbox,
+    installNodeModules,
+    installPnp,
+    pack,
+    run,
+    succeed,
+    writeJson,
+    ROOT,
+    YARN,
+    type Options,
+    type Result
+} from './consumers.ts';
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const sandbox = mkdtempSync(join(tmpdir(), 'snovader-tsconfig-'));
-const consumer = join(sandbox, 'consumer');
-const tsc = join(root, 'node_modules/typescript/bin/tsc');
-const yarn = join(root, '.yarn/releases/yarn-4.18.1.cjs');
-const presets = {
+interface CompilerOptions {
+    readonly allowImportingTsExtensions?: boolean;
+    readonly allowUnreachableCode?: boolean;
+    readonly allowUnusedLabels?: boolean;
+    readonly composite?: boolean;
+    readonly customConditions?: readonly string[];
+    readonly emitDeclarationOnly?: boolean;
+    readonly erasableSyntaxOnly?: boolean;
+    readonly jsx?: string;
+    readonly jsxImportSource?: string;
+    readonly lib?: readonly string[];
+    readonly module?: string;
+    readonly noEmit?: boolean;
+    readonly noFallthroughCasesInSwitch?: boolean;
+    readonly noImplicitOverride?: boolean;
+    readonly noUncheckedSideEffectImports?: boolean;
+    readonly outDir?: string;
+    readonly rewriteRelativeImportExtensions?: boolean;
+    readonly rootDir?: string;
+    readonly strict?: boolean;
+    readonly types?: readonly string[];
+}
+
+const TSC = join(ROOT, 'node_modules/typescript/bin/tsc');
+
+/** The presets by the subpaths that the package exports them under */
+const PRESETS: Readonly<Record<string, string>> = {
     base: 'tsconfig.base.json',
     node: 'tsconfig.node.json',
     isomorphic: 'tsconfig.isomorphic.json',
@@ -29,31 +59,31 @@ const presets = {
     'cloudflare-workers': 'tsconfig.cloudflare-workers.json',
     'cloudflare-workers/test': 'tsconfig.cloudflare-workers-test.json'
 };
-const subpaths = { ...presets, composite: 'tsconfig.composite.json' };
-let tarball;
+const SUBPATHS: Readonly<Record<string, string>> = {
+    ...PRESETS,
+    composite: 'tsconfig.composite.json'
+};
 
-function run(command, args, options = {}) {
-    const result = spawnSync(command, args, {
-        cwd: consumer,
-        encoding: 'utf8',
-        ...options
-    });
-    assert.ifError(result.error);
-    assert.equal(result.signal, null, result.stderr);
-    return result;
-}
+const sandbox = createSandbox();
+const consumer = join(sandbox, 'consumer');
+const tarball = pack('@snovader/tsconfig', sandbox);
 
-function succeed(command, args, options = {}) {
-    const result = run(command, args, options);
-    assert.equal(result.status, 0, result.stdout + result.stderr);
-    return result.stdout;
-}
+installNodeModules(consumer, [tarball]);
+// The consumer supplies its compiler and environment typings
+symlinkSync(join(ROOT, 'node_modules/@types'), join(consumer, 'node_modules/@types'));
+writeFileSync(join(consumer, 'value.ts'), 'export const value: number = 41;\n');
+writeFileSync(
+    join(consumer, 'example.ts'),
+    "import { value } from './value.ts';\nexport const answer: number = value + 1;\n"
+);
 
-function writeJson(path, value) {
-    writeFileSync(path, `${JSON.stringify(value, null, 4)}\n`);
-}
+after(() => rmSync(sandbox, { recursive: true, force: true }));
 
-function configure(extended, compilerOptions = {}, source = 'example.ts') {
+function configure(
+    extended: string,
+    compilerOptions: CompilerOptions = {},
+    source = 'example.ts'
+): void {
     writeJson(join(consumer, 'tsconfig.json'), {
         extends: extended,
         compilerOptions,
@@ -62,63 +92,23 @@ function configure(extended, compilerOptions = {}, source = 'example.ts') {
 }
 
 // TypeScript 7 prints an empty configuration and exits successfully when
-// `extends` does not resolve, so callers assert on the inherited options.
-function showConfig(options = {}) {
-    return JSON.parse(succeed(process.execPath, [tsc, '--showConfig'], options))
-        .compilerOptions;
+// `extends` does not resolve, so callers assert on the inherited options
+function showConfig(options: Options = { cwd: consumer }): CompilerOptions {
+    const output = succeed(process.execPath, [TSC, '--showConfig'], options);
+
+    return (JSON.parse(output) as { compilerOptions: CompilerOptions }).compilerOptions;
 }
 
-function compile(options = {}) {
-    return run(process.execPath, [tsc, '--project', 'tsconfig.json'], options);
+function compile(options: Options = { cwd: consumer }): Result {
+    return run(process.execPath, [TSC, '--project', 'tsconfig.json'], options);
 }
 
-function emitted(directory) {
-    return readdirSync(directory).filter(name =>
-        /\.(?:js|d\.ts|tsbuildinfo)$/.test(name)
-    );
+/** The files that tsc wrote to a directory */
+function emitted(directory: string): string[] {
+    return readdirSync(directory).filter(name => /\.(?:js|d\.ts|tsbuildinfo)$/u.test(name));
 }
 
-before(() => {
-    mkdirSync(consumer);
-    const output = succeed('npm', [
-        'pack',
-        join(root, 'packages/tsconfig'),
-        '--json',
-        '--pack-destination',
-        sandbox
-    ]);
-    tarball = join(sandbox, JSON.parse(output)[0].filename);
-
-    writeJson(join(consumer, 'package.json'), {
-        private: true,
-        type: 'module'
-    });
-    succeed('npm', [
-        'install',
-        '--ignore-scripts',
-        '--no-audit',
-        '--no-fund',
-        '--package-lock=false',
-        tarball
-    ]);
-    // The consumer supplies its compiler and environment typings.
-    symlinkSync(
-        join(root, 'node_modules/@types'),
-        join(consumer, 'node_modules/@types')
-    );
-    writeFileSync(
-        join(consumer, 'value.ts'),
-        'export const value: number = 41;\n'
-    );
-    writeFileSync(
-        join(consumer, 'example.ts'),
-        "import { value } from './value.ts';\nexport const answer: number = value + 1;\n"
-    );
-});
-
-after(() => rmSync(sandbox, { recursive: true, force: true }));
-
-for (const preset of Object.keys(presets)) {
+for (const preset of Object.keys(PRESETS)) {
     test(`packed TypeScript ${preset} subpath resolves and inherits the base options`, () => {
         configure(`@snovader/tsconfig/${preset}`);
         const config = showConfig();
@@ -131,18 +121,26 @@ for (const preset of Object.keys(presets)) {
         assert.equal(config.allowUnusedLabels, false);
         assert.equal(config.noFallthroughCasesInSwitch, true);
         assert.equal(config.erasableSyntaxOnly, true);
-        if (preset === 'base') assert.deepEqual(config.types, []);
-        if (preset === 'node') assert.deepEqual(config.types, ['node']);
-        if (preset === 'web') assert.deepEqual(config.lib, ['dom', 'esnext']);
-        if (preset === 'isomorphic')
+        if (preset === 'base') {
+            assert.deepEqual(config.types, []);
+        }
+        if (preset === 'node') {
+            assert.deepEqual(config.types, ['node']);
+        }
+        if (preset === 'web') {
+            assert.deepEqual(config.lib, ['dom', 'esnext']);
+        }
+        if (preset === 'isomorphic') {
             assert.deepEqual(config.lib, ['esnext', 'webworker']);
+        }
         if (preset === 'web-preact') {
             assert.deepEqual(config.lib, ['dom', 'esnext']);
             assert.equal(config.jsx, 'react-jsx');
             assert.equal(config.jsxImportSource, 'preact');
         }
-        if (preset === 'cloudflare-workers')
+        if (preset === 'cloudflare-workers') {
             assert.deepEqual(config.types, ['@cloudflare/workers-types']);
+        }
         if (preset === 'cloudflare-workers/test') {
             assert.deepEqual(config.types, [
                 '@cloudflare/workers-types',
@@ -156,7 +154,7 @@ test('preset file paths are not exported', () => {
     configure('@snovader/tsconfig/tsconfig.base.json', { noEmit: true });
     const result = compile();
     assert.notEqual(result.status, 0);
-    assert.match(result.stdout, /TS6053/);
+    assert.match(result.stdout, /TS6053/u);
 });
 
 test('base, Node, browser, and isomorphic consumers typecheck .ts imports without emitting', () => {
@@ -226,10 +224,10 @@ export function check(value: number): number {
     configure('@snovader/tsconfig/base', {}, 'checks.ts');
     const result = compile();
     assert.notEqual(result.status, 0);
-    assert.match(result.stdout, /checks\.ts\(1,13\): error TS1294/);
-    assert.match(result.stdout, /checks\.ts\(3,5\): error TS7028/);
-    assert.match(result.stdout, /checks\.ts\(5,9\): error TS7029/);
-    assert.match(result.stdout, /checks\.ts\(11,5\): error TS7027/);
+    assert.match(result.stdout, /checks\.ts\(1,13\): error TS1294/u);
+    assert.match(result.stdout, /checks\.ts\(3,5\): error TS7028/u);
+    assert.match(result.stdout, /checks\.ts\(5,9\): error TS7029/u);
+    assert.match(result.stdout, /checks\.ts\(11,5\): error TS7027/u);
 });
 
 test("base relies on TypeScript 7's strict and side-effect import checks", () => {
@@ -248,9 +246,9 @@ export const count: number = null;
     assert.equal(config.noUncheckedSideEffectImports, undefined);
     const result = compile();
     assert.notEqual(result.status, 0);
-    assert.match(result.stdout, /defaults\.ts\(1,8\): error TS2882/);
-    assert.match(result.stdout, /defaults\.ts\(2,26\): error TS7006/);
-    assert.match(result.stdout, /defaults\.ts\(5,14\): error TS2322/);
+    assert.match(result.stdout, /defaults\.ts\(1,8\): error TS2882/u);
+    assert.match(result.stdout, /defaults\.ts\(2,26\): error TS7006/u);
+    assert.match(result.stdout, /defaults\.ts\(5,14\): error TS2322/u);
 });
 
 test('consumers can turn erasableSyntaxOnly off', () => {
@@ -258,11 +256,7 @@ test('consumers can turn erasableSyntaxOnly off', () => {
         join(consumer, 'enum.ts'),
         'export enum Color { Red }\nexport class Point { constructor(readonly x: number) {} }\n'
     );
-    configure(
-        '@snovader/tsconfig/base',
-        { erasableSyntaxOnly: false },
-        'enum.ts'
-    );
+    configure('@snovader/tsconfig/base', { erasableSyntaxOnly: false }, 'enum.ts');
     const result = compile();
     assert.equal(result.status, 0, result.stdout + result.stderr);
 });
@@ -280,10 +274,7 @@ test('consumers emit JavaScript by turning noEmit off and rewriting .ts imports'
         readFileSync(join(consumer, 'dist/example.js'), 'utf8'),
         "import { value } from './value.js';\nexport const answer = value + 1;\n"
     );
-    assert.deepEqual(readdirSync(join(consumer, 'dist')).sort(), [
-        'example.js',
-        'value.js'
-    ]);
+    assert.deepEqual(readdirSync(join(consumer, 'dist')).toSorted(), ['example.js', 'value.js']);
     rmSync(join(consumer, 'dist'), { recursive: true });
 });
 
@@ -291,10 +282,7 @@ test('composite preset listed after an environment preset builds project referen
     const monorepo = join(consumer, 'monorepo');
     mkdirSync(join(monorepo, 'shared'), { recursive: true });
     mkdirSync(join(monorepo, 'server'));
-    writeFileSync(
-        join(monorepo, 'shared/one.ts'),
-        'export const one: number = 1;\n'
-    );
+    writeFileSync(join(monorepo, 'shared/one.ts'), 'export const one: number = 1;\n');
     writeFileSync(
         join(monorepo, 'shared/index.ts'),
         "import { one } from './one.ts';\nexport const answer: number = one + 41;\n"
@@ -303,20 +291,14 @@ test('composite preset listed after an environment preset builds project referen
         join(monorepo, 'server/index.ts'),
         "import { answer } from '../shared/index.ts';\nexport const doubled: number = answer * 2;\n"
     );
-    const project = (preset, references = []) => ({
-        extends: [
-            `@snovader/tsconfig/${preset}`,
-            '@snovader/tsconfig/composite'
-        ],
+    const project = (preset: string, references: readonly object[] = []): object => ({
+        extends: [`@snovader/tsconfig/${preset}`, '@snovader/tsconfig/composite'],
         compilerOptions: { rootDir: '.', outDir: './dist' },
         include: ['*.ts'],
         references
     });
     writeJson(join(monorepo, 'shared/tsconfig.json'), project('isomorphic'));
-    writeJson(
-        join(monorepo, 'server/tsconfig.json'),
-        project('node', [{ path: '../shared' }])
-    );
+    writeJson(join(monorepo, 'server/tsconfig.json'), project('node', [{ path: '../shared' }]));
     writeJson(join(monorepo, 'tsconfig.json'), {
         files: [],
         references: [{ path: './shared' }, { path: './server' }]
@@ -331,9 +313,11 @@ test('composite preset listed after an environment preset builds project referen
     assert.equal(config.erasableSyntaxOnly, true);
     assert.equal(config.noImplicitOverride, true);
 
-    for (let build = 0; build < 2; build++)
-        succeed(process.execPath, [tsc, '--build'], { cwd: monorepo });
-    assert.deepEqual(readdirSync(join(monorepo, 'shared/dist')).sort(), [
+    // A second build finds the first one's output up to date
+    for (let build = 0; build < 2; build++) {
+        succeed(process.execPath, [TSC, '--build'], { cwd: monorepo });
+    }
+    assert.deepEqual(readdirSync(join(monorepo, 'shared/dist')).toSorted(), [
         'index.d.ts',
         'one.d.ts',
         'tsconfig.tsbuildinfo'
@@ -380,11 +364,8 @@ test('a local file listed after a preset adds options and keeps its types', () =
 
 test('Yarn PnP resolves preset subpaths and inherits materialized presets', () => {
     const directory = join(sandbox, 'pnp-consumer');
-    mkdirSync(directory);
-    writeJson(join(directory, 'package.json'), {
-        name: 'pnp-consumer',
-        private: true,
-        type: 'module',
+    const options: Options = { cwd: directory };
+    installPnp(directory, {
         dependencies: {
             '@snovader/tsconfig': `file:${tarball}`,
             typescript: '7.0.2'
@@ -393,52 +374,25 @@ test('Yarn PnP resolves preset subpaths and inherits materialized presets', () =
             '@snovader/tsconfig': { unplugged: true }
         }
     });
-    writeFileSync(join(directory, 'yarn.lock'), '');
-    writeFileSync(
-        join(directory, '.yarnrc.yml'),
-        // This temporary consumer creates its own lockfile, including in CI.
-        'nodeLinker: pnp\nenableTelemetry: false\nenableImmutableInstalls: false\n'
-    );
-    succeed(process.execPath, [yarn, 'install'], { cwd: directory });
 
+    const resolve = `const path = require('node:path'); console.log(JSON.stringify(Object.fromEntries(${JSON.stringify(Object.keys(SUBPATHS))}.map(name => [name, path.basename(require.resolve('@snovader/tsconfig/' + name))]))));`;
     const resolved = JSON.parse(
-        succeed(
-            process.execPath,
-            [
-                yarn,
-                'node',
-                '-e',
-                `const path = require('node:path'); console.log(JSON.stringify(Object.fromEntries(${JSON.stringify(Object.keys(subpaths))}.map(name => [name, path.basename(require.resolve('@snovader/tsconfig/' + name))]))));`
-            ],
-            { cwd: directory }
-        )
-    );
-    assert.deepEqual(resolved, subpaths);
+        succeed(process.execPath, [YARN, 'node', '-e', resolve], options)
+    ) as Record<string, string>;
+    assert.deepEqual(resolved, SUBPATHS);
 
-    succeed(
-        process.execPath,
-        [
-            yarn,
-            'node',
-            '-e',
-            "const fs = require('node:fs'); const path = require('node:path'); fs.cpSync(path.dirname(require.resolve('@snovader/tsconfig/base')), '.cache/tsconfig', { recursive: true });"
-        ],
-        { cwd: directory }
-    );
-    writeFileSync(
-        join(directory, 'example.ts'),
-        'export const answer: number = 42;\n'
-    );
+    const materialize =
+        "const fs = require('node:fs'); const path = require('node:path'); fs.cpSync(path.dirname(require.resolve('@snovader/tsconfig/base')), '.cache/tsconfig', { recursive: true });";
+    succeed(process.execPath, [YARN, 'node', '-e', materialize], options);
+    writeFileSync(join(directory, 'example.ts'), 'export const answer: number = 42;\n');
     writeJson(join(directory, 'tsconfig.json'), {
         extends: './.cache/tsconfig/tsconfig.base.json',
         files: ['example.ts']
     });
-    const config = showConfig({ cwd: directory });
+    const config = showConfig(options);
     assert.equal(config.noEmit, true);
     assert.equal(config.erasableSyntaxOnly, true);
-    succeed(process.execPath, [yarn, 'tsc', '--project', 'tsconfig.json'], {
-        cwd: directory
-    });
+    succeed(process.execPath, [YARN, 'tsc', '--project', 'tsconfig.json'], options);
     assert.deepEqual(emitted(directory), []);
 
     writeJson(join(directory, 'tsconfig.json'), {
@@ -449,7 +403,7 @@ test('Yarn PnP resolves preset subpaths and inherits materialized presets', () =
         compilerOptions: { rootDir: '.', outDir: './dist' },
         files: ['example.ts']
     });
-    succeed(process.execPath, [yarn, 'tsc', '--build'], { cwd: directory });
+    succeed(process.execPath, [YARN, 'tsc', '--build'], options);
     assert.equal(
         readFileSync(join(directory, 'dist/example.d.ts'), 'utf8'),
         'export declare const answer: number;\n'

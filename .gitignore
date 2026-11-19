@@ -1,6 +1,10 @@
-node_modules/
-.cache/
-*.tgz
-.yarn/*
-!.yarn/releases/
-dist/
+.idea
+
+node_modules
+/packages/*/dist
+/.yarn/*
+!/.yarn/patches
+!/.yarn/plugins
+!/.yarn/releases
+!/.yarn/sdks
+!/.yarn/versions
