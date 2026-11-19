@@ -86,11 +86,10 @@ off for reasons of its own in the project's configuration.
 ### Signals and exhaustive dependencies
 
 oxlint's `react/exhaustive-deps` takes only `additionalHooks`, and has no way
-to mark a hook's result as stable, as Biome's `stableResult` does. It reports
-a signal from `useSignal` or `useComputed` that a callback, effect or memo
-reads but doesn't list. List the signal itself, which stays the same from one
-render to the next, rather than its `.value`, which would subscribe the
-component to it:
+to mark a hook's result as stable. It reports a signal from `useSignal` or
+`useComputed` that a callback, effect or memo reads but doesn't list. List
+the signal itself, which stays the same from one render to the next, rather
+than its `.value`, which would subscribe the component to it:
 
 ```tsx
 const url = useSignal('/');
@@ -106,18 +105,23 @@ const route = useCallback(
 
 The base loads the package's plugin and turns on `snovader/sort-named-imports`,
 which orders the names in an import's braces: functions and values whose names
-start in lower case, then classes and constants, then types, each in natural
-order, so `SIZEOF_8` comes before `SIZEOF_16`. Its fix moves the names, unless
-comments lie between them.
+start in lower case, then classes and constants, then names that start
+otherwise, such as with `_`, then types, each in natural order, so `SIZEOF_8`
+comes before `SIZEOF_16`. Its fix moves the names, unless comments lie between
+them.
 
 ## Array types and return types
 
 `typescript/array-type` uses `T[]` and `readonly T[]` for arrays of keywords,
 of names without type arguments, and of arrays of those, and `Array<T>` and
-`ReadonlyArray<T>` for the rest, as `@snovader/biome-config`'s
-`useArraySimple` did. `typescript/explicit-function-return-type` requires
-return types where `useExplicitReturnType` did, except that it requires them
-on overrides too, and not on the members of object literals without a type.
+`ReadonlyArray<T>` for the rest: `number[][]` and `readonly string[]`, but
+`Array<string | number>`. Its fix rewrites the type.
+
+`typescript/explicit-function-return-type` requires return types on function
+declarations, class members, overrides included, and functions bound to
+variables. It doesn't require them on callbacks, on functions whose type
+comes from where they appear, such as a typed variable, on the members of an
+object literal without a type, or in JavaScript files.
 
 ## Yarn Plug'n'Play
 
