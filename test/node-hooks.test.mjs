@@ -399,6 +399,10 @@ test("Yarn PnP projects load TypeScript, and the PnP hooks resolve packages' exp
             dependencies: {
                 '@snovader/node-hooks': `file:${tarball}`,
                 dual: 'file:./dual',
+                // Installed under names that differ from their package.json
+                aliased: 'file:./target',
+                'aliased-maps': 'npm:resolve-pkg-maps@^1.0.0',
+                nameless: 'file:./nameless',
                 'resolve-pkg-maps': '^1.0.0'
             },
             dependenciesMeta: {
@@ -416,6 +420,16 @@ test("Yarn PnP projects load TypeScript, and the PnP hooks resolve packages' exp
         },
         'dual/esm.mjs': "export default 'import';\n",
         'dual/cjs.cjs': "module.exports = 'require';\n",
+        'target/package.json': {
+            name: 'target',
+            version: '1.0.0',
+            type: 'module',
+            exports: { '.': './index.js', './feature': './feature.js' }
+        },
+        'target/index.js': "export default 'aliased';\n",
+        'target/feature.js': "export default 'feature';\n",
+        'nameless/package.json': { version: '1.0.0', type: 'module' },
+        'nameless/index.js': "export default 'nameless';\n",
         // Only Yarn's CommonJS runtime runs, so the hooks are imported by path
         'import-hooks.mjs': `import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
@@ -443,11 +457,20 @@ registerHooks({ load: typescript.load });
         'internal.ts':
             "const internal: string = 'internal';\nexport default internal;\n\nif (import.meta.main) {\n    console.log(JSON.stringify(internal));\n}\n",
         'main.ts': `import { createRequire } from 'node:module';
+import aliased from 'aliased';
+import feature from 'aliased/feature';
+import { resolveExports } from 'aliased-maps';
 import imported from 'dual';
+import nameless from 'nameless';
 import internal from '#internal';
 
 const required: string = createRequire(import.meta.url)('dual');
-console.log(JSON.stringify({ dual: [imported, required], internal }));
+console.log(JSON.stringify({
+    dual: [imported, required],
+    internal,
+    aliased: [aliased, feature, typeof resolveExports],
+    nameless
+}));
 `
     });
     succeed(process.execPath, [yarn, 'install'], { cwd: directory });
@@ -476,6 +499,11 @@ console.log(JSON.stringify({ dual: [imported, required], internal }));
             ],
             { cwd: directory }
         ),
-        { dual: ['import', 'require'], internal: 'internal' }
+        {
+            dual: ['import', 'require'],
+            internal: 'internal',
+            aliased: ['aliased', 'feature', 'function'],
+            nameless: 'nameless'
+        }
     );
 });

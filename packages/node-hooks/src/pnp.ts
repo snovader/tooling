@@ -5,6 +5,7 @@ import process from 'node:process';
 import type * as ResolvePkgMaps from 'resolve-pkg-maps';
 import {
     getFileFormat,
+    readPackage,
     readPackageScope,
     resolveBuiltin
 } from './internal/packages.ts';
@@ -111,8 +112,9 @@ function resolveRequest(
         return;
     }
 
-    const unqualifiedUrl = pathToFileUrl(`${unqualified}/`);
-    const pkg = readPackageScope(`${unqualifiedUrl}package.json`, packageName);
+    // PnP returns the package's root, whose package.json can name another
+    // package, as under an alias such as `npm:other@1`, or none at all
+    const pkg = readPackage(unqualified);
     if (!pkg) {
         return;
     }
@@ -130,7 +132,7 @@ function resolveRequest(
         return;
     }
 
-    const url = new URL(resolvedImport, unqualifiedUrl);
+    const url = new URL(resolvedImport, pathToFileUrl(`${unqualified}/`));
     return url.href;
 }
 

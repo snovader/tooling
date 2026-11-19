@@ -10,20 +10,16 @@ export interface PackageData {
     imports?: PathConditionsMap;
     main?: string;
     module?: string;
-    name: string;
     type?: ModuleFormat;
 }
 
 const packageCache = new Map<string, PackageData | false>();
 
 /**
- * Finds the nearest package.json above a file, or the one named
- * `packageName`, without leaving the file's `node_modules` directory.
+ * Finds the nearest package.json above a file without leaving the file's
+ * `node_modules` directory.
  */
-export function readPackageScope(
-    urlString: string,
-    packageName?: string
-): PackageData | undefined {
+export function readPackageScope(urlString: string): PackageData | undefined {
     let currentPath = fileUrlToPath(urlString);
 
     while (true) {
@@ -33,7 +29,7 @@ export function readPackageScope(
         }
 
         const packageData = readPackage(dirname);
-        if (packageData && (!packageName || packageData.name === packageName)) {
+        if (packageData) {
             return packageData;
         }
 
@@ -41,7 +37,8 @@ export function readPackageScope(
     }
 }
 
-function readPackage(directory: string): PackageData | undefined {
+/** Reads the package.json in a directory, a path with forward slashes */
+export function readPackage(directory: string): PackageData | undefined {
     const packageData = packageCache.getOrInsertComputed(directory, () => {
         try {
             const content = fs.readFileSync(
@@ -49,11 +46,11 @@ function readPackage(directory: string): PackageData | undefined {
                 'utf8'
             );
 
-            const { name, type, main, module, exports, imports } = JSON.parse(
+            const { type, main, module, exports, imports } = JSON.parse(
                 content
             ) as PackageData;
 
-            return { directory, name, type, main, module, exports, imports };
+            return { directory, type, main, module, exports, imports };
         } catch {
             return false;
         }
