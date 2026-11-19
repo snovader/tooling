@@ -1,128 +1,186 @@
 # snovader tooling
 
-Shared development tooling, published as independently versioned npm
-packages. The Biome and TypeScript configurations contain only configuration
-and GritQL files, with nothing to build. The Node.js module hooks are compiled
-to JavaScript when packed.
+Shared configuration and Node module hooks for TypeScript projects, published
+under the `@snovader` scope as three packages, each with a version of its own:
 
-| Package                                         | Contents                                                           |
-| ----------------------------------------------- | ------------------------------------------------------------------ |
-| [@snovader/biome-config](packages/biome-config) | Formatting, lint settings, and two custom GritQL rules             |
-| [@snovader/tsconfig](packages/tsconfig)         | Strict compiler settings with environment presets                  |
-| [@snovader/node-hooks](packages/node-hooks)     | TypeScript stripping with oxc, byte imports, and Yarn PnP for Node |
+| Package                                     | What it has                                                                   |
+| ------------------------------------------- | ----------------------------------------------------------------------------- |
+| [@snovader/tsconfig](packages/tsconfig)     | TypeScript 7 configurations for Node, browsers, workers, and Preact           |
+| [@snovader/oxc-config](packages/oxc-config) | oxfmt and oxlint configurations, with presets for Vitest, hypotes, and Preact |
+| [@snovader/node-hooks](packages/node-hooks) | Node module hooks: TypeScript stripped with oxc, byte imports, and Yarn PnP   |
 
-## Usage
+The configurations hold what suits any project. A project extends them, and
+adds its own paths and exceptions. `@snovader/oxc-config` and
+`@snovader/node-hooks` need Node 26 or later.
 
-Install the packages you need alongside their tools:
+## Quick start
+
+### TypeScript
+
+Install the compiler, Node's types, and the configurations:
 
 ```sh
-npm install --save-dev @biomejs/biome @snovader/biome-config
-npm install --save-dev typescript @snovader/tsconfig
+npm install --save-dev typescript @types/node @snovader/tsconfig
 ```
 
-Extend them from `biome.json`:
+Extend the Node preset in `tsconfig.json`, and list the project's files:
 
 ```json
 {
-    "extends": ["@snovader/biome-config/configs/base"]
+    "extends": "@snovader/tsconfig/node",
+    "include": ["*.config.ts", "source"]
 }
 ```
 
-And from `tsconfig.json`:
+`npx tsc` then checks the types, and writes no files. The
+[package's README](packages/tsconfig) has the presets for browsers, workers,
+and Preact, and how to emit JavaScript or build project references.
 
-```json
-{
-    "extends": "@snovader/tsconfig/tsconfig.node.json",
-    "compilerOptions": {
-        "rootDir": "./source",
-        "outDir": "./dist"
-    },
-    "include": ["source"]
-}
+### Formatting and linting
+
+Install the configurations with oxfmt, oxlint, and tsgolint, which runs
+oxlint's type-aware rules:
+
+```sh
+npm install --save-dev @snovader/oxc-config oxfmt oxlint oxlint-tsgolint
 ```
 
-Start Node with the TypeScript hook, which strips types without detaching
-array buffers as Node's own stripping does:
+oxfmt has no `extends`, so `oxfmt.config.ts` spreads the shared options, and
+adds the paths that the project leaves out:
+
+```ts
+import oxfmt from '@snovader/oxc-config/oxfmt';
+import { defineConfig } from 'oxfmt';
+
+export default defineConfig({
+    ...oxfmt,
+    ignorePatterns: ['dist', '**/package.json', '**/*.md']
+});
+```
+
+`oxlint.config.ts` extends the base configuration:
+
+```ts
+import oxlint from '@snovader/oxc-config/oxlint';
+import { defineConfig } from 'oxlint';
+
+export default defineConfig({
+    extends: [oxlint],
+    ignorePatterns: ['dist']
+});
+```
+
+Then check the project:
+
+```sh
+npx oxfmt --check
+npx oxlint
+```
+
+oxfmt prints `All matched files use the correct format.`, and oxlint prints
+nothing when it finds nothing. The type-aware rules read the project's
+`tsconfig.json`. oxlint skips the files that `.gitignore` lists, but not
+`node_modules` by itself, so a project without a `.gitignore` adds
+`node_modules` to oxlint's `ignorePatterns`.
+
+The [package's README](packages/oxc-config) has the presets for Vitest,
+hypotes, and Preact, and what the rules check.
+
+### Module hooks
+
+Install the hooks:
 
 ```sh
 npm install @snovader/node-hooks
-node --no-strip-types --import @snovader/node-hooks/register app.ts
 ```
 
-The package READMEs list every preset, rule, and hook.
+Start Node with the TypeScript hook, which strips types with oxc rather than
+with Node's own stripping:
+
+```sh
+node --no-strip-types --import @snovader/node-hooks/register source/app.ts
+```
+
+Node's own stripping detaches an `ArrayBuffer` once a module is large enough.
+From then on, V8's optimized code checks every access to a typed array for a
+detached buffer, for the rest of the process. The
+[package's README](packages/node-hooks) has the measurements, and the hooks
+for imports of bytes, a resolution cache, and Yarn PnP.
 
 ## What stays local
 
-The shared files hold settings that suit any project. Keep these in the
-consuming repository:
+The shared configurations leave out what depends on the project. Keep these in
+the project's own configuration:
 
-- File selection, generated-code exclusions, and VCS settings
-- Project paths such as `include`, `rootDir`, `outDir`, and `references`
-- Custom module conditions, `erasableSyntaxOnly`, and other project choices
-- Ambient typings for the application
-- Rule exceptions and restricted imports specific to the application
+- the paths that oxfmt and oxlint ignore (`ignorePatterns`), and the files
+  that TypeScript checks (`include`, `exclude`, `files`), with `rootDir`,
+  `outDir`, and `references`;
+- the names that the project imports itself by, which oxfmt sorts after other
+  packages (`sortImports.internalPattern`);
+- the imports that it restricts, such as of its own entry points from inside
+  its source (`no-restricted-imports`);
+- the rules that it turns off for reasons of its own, with a comment that
+  says why;
+- the ambient typings of its environment and application, its custom module
+  conditions, and JSX outside the Preact preset.
 
-Biome adds local rules and overrides to the shared ones. TypeScript replaces
-inherited arrays such as `types` and `lib`, so list every entry you need.
+Each tool joins the project's settings to the shared ones in its own way:
+
+- oxfmt: the project's keys replace the shared ones. Spread
+  `oxfmt.sortImports` or `oxfmt.overrides` into the project's own to keep
+  the shared ones.
+- oxlint: `extends` merges the configurations in order, and the project's
+  own `rules` and `overrides` come last.
+- TypeScript: later entries of `extends` win, and an array, such as `types`
+  or `lib`, replaces the inherited one rather than adding to it.
 
 ## Yarn Plug'n'Play
 
-Biome 2.6.4 and TypeScript 7.0.2 cannot load a shared config from a PnP
-install. Each package README has a short step that copies the installed config
-into `.cache/` for the project to extend. A compiler build with PnP support can
-extend the TypeScript presets directly.
+The tests install each package in a Yarn PnP project, as well as in
+`node_modules`. Under PnP:
+
+- oxlint and oxfmt import `@snovader/oxc-config`'s configurations. oxlint
+  loads the package's plugin from disk, so the package asks Yarn to unpack it
+  (`preferUnplugged`). A project that extends `oxlint/hypotes` unplugs
+  `hypotes` itself.
+- tsgolint can't resolve packages through PnP. oxlint's type-aware rules see
+  what a module imports from a package as an error type, and the `no-unsafe-*`
+  rules report where it's used.
+- TypeScript 7.0.2 doesn't resolve `@snovader/tsconfig` in `extends`. The
+  project copies the presets to `.cache/` after installing, and extends them by
+  path.
+- Node resolves packages through Yarn's runtime, loaded with
+  `--require ./.pnp.cjs`, and the hooks of `@snovader/node-hooks/pnp`. The
+  project unplugs `@snovader/node-hooks`, and imports the hooks by path.
+
+Each package's README has the steps.
 
 ## Development
 
-Use Node.js 26 or later and the checked-in Yarn release:
+Use Node 26 or later, and the Yarn release in `.yarn/releases`:
 
 ```sh
 yarn install --immutable
 yarn check
 ```
 
-If `yarn` is missing or runs another version, use
-`node .yarn/releases/yarn-4.18.1.cjs` instead.
+If `yarn` is missing, `node .yarn/releases/yarn-4.18.1.cjs` runs the same
+release.
 
-`yarn check` runs Biome on this repository and builds the module hooks. It
-then packs the packages and installs the tarballs in temporary npm and Yarn
-PnP projects. The tests cover:
-
-- formatting, and rule diagnostics and fixes;
-- TypeScript inheritance and compilation;
-- modules loaded through the hooks, including a check that V8's
-  ArrayBufferDetaching protector stays intact.
+`yarn check` checks the formatting, lints, and checks the types of the
+repository, with its own packages' configurations. Then it runs the tests,
+which pack each package with Yarn and install it in temporary projects, with
+npm into `node_modules` and with Yarn PnP, and run the tools and hooks there.
+[`AGENTS.md`](AGENTS.md) has the guidelines for changing the packages, and
+the checks that CI runs.
 
 ## Releasing
 
-Release each package separately by changing its own `version`. A stricter rule
-or compiler setting can break consumers, so release it as a breaking change.
-
-```sh
-yarn check
-npm pack --dry-run ./packages/biome-config
-npm pack --dry-run ./packages/tsconfig
-yarn workspace @snovader/node-hooks pack --dry-run
-```
-
-Pack and publish the module hooks with Yarn, which builds them first through
-their `prepack` script. In this repository, their `exports` name the
-TypeScript source, and Yarn replaces them with those of `publishConfig`, which
-name the build. npm keeps the source's exports, which the package leaves out,
-so the `prepack` script refuses to run under npm.
-
-After reviewing the contents, publish from an npm account with access to the
-`@snovader` scope:
-
-```sh
-npm publish ./packages/biome-config
-npm publish ./packages/tsconfig
-yarn workspace @snovader/node-hooks npm publish
-```
-
-Publishing may ask for a two-factor code. CI only runs checks; pushing never
-publishes.
+Each package is released on its own, by a release on GitHub whose tag names
+the package's directory and its version, as `oxc-config/v0.2.0`.
+`.github/workflows/release.yml` checks the tag, runs CI on it, and publishes
+the package to npm. [`AGENTS.md`](AGENTS.md#releasing) has the steps.
 
 ## License
 
-MIT
+[MIT](LICENSE)
