@@ -1,0 +1,7 @@
+{
+    "compilerOptions": {
+        "composite": true,
+        "emitDeclarationOnly": true,
+        "noEmit": false
+    }
+}

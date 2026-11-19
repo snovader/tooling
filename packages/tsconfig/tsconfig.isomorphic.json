@@ -1,11 +1,6 @@
 {
     "extends": "./tsconfig.base.json",
     "compilerOptions": {
-        "lib": [
-            "ESNext",
-            "WebWorker",
-            "WebWorker.AsyncIterable",
-            "WebWorker.Iterable"
-        ]
+        "lib": ["ESNext", "WebWorker"]
     }
 }

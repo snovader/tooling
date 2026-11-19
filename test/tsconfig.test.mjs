@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
+    existsSync,
     mkdtempSync,
     mkdirSync,
+    readdirSync,
     readFileSync,
     rmSync,
     symlinkSync,
@@ -27,6 +29,7 @@ const presets = {
     'cloudflare-workers': 'tsconfig.cloudflare-workers.json',
     'cloudflare-workers/test': 'tsconfig.cloudflare-workers-test.json'
 };
+const subpaths = { ...presets, composite: 'tsconfig.composite.json' };
 let tarball;
 
 function run(command, args, options = {}) {
@@ -69,6 +72,12 @@ function compile(options = {}) {
     return run(process.execPath, [tsc, '--project', 'tsconfig.json'], options);
 }
 
+function emitted(directory) {
+    return readdirSync(directory).filter(name =>
+        /\.(?:js|d\.ts|tsbuildinfo)$/.test(name)
+    );
+}
+
 before(() => {
     mkdirSync(consumer);
     const output = succeed('npm', [
@@ -98,20 +107,26 @@ before(() => {
         join(consumer, 'node_modules/@types')
     );
     writeFileSync(
+        join(consumer, 'value.ts'),
+        'export const value: number = 41;\n'
+    );
+    writeFileSync(
         join(consumer, 'example.ts'),
-        'export const answer: number = 42;\n'
+        "import { value } from './value.ts';\nexport const answer: number = value + 1;\n"
     );
 });
 
 after(() => rmSync(sandbox, { recursive: true, force: true }));
 
 for (const preset of Object.keys(presets)) {
-    test(`packed TypeScript ${preset} subpath resolves and inherits strict checking`, () => {
+    test(`packed TypeScript ${preset} subpath resolves and inherits strict typechecking`, () => {
         configure(`@snovader/tsconfig/${preset}`);
         const config = showConfig();
         assert.equal(config.strict, true);
         assert.equal(config.module, 'nodenext');
-        assert.equal(config.emitDeclarationOnly, true);
+        assert.equal(config.noEmit, true);
+        assert.equal(config.composite, undefined);
+        assert.equal(config.emitDeclarationOnly, undefined);
         assert.equal(config.noImplicitOverride, true);
         assert.equal(config.allowUnreachableCode, false);
         assert.equal(config.allowUnusedLabels, false);
@@ -119,13 +134,11 @@ for (const preset of Object.keys(presets)) {
         assert.equal(config.erasableSyntaxOnly, true);
         if (preset === 'base') assert.deepEqual(config.types, []);
         if (preset === 'node') assert.deepEqual(config.types, ['node']);
-        if (preset === 'web') assert.ok(config.lib.includes('dom'));
-        if (preset === 'isomorphic') {
-            assert.ok(config.lib.includes('webworker'));
-            assert.ok(!config.lib.includes('dom'));
-        }
+        if (preset === 'web') assert.deepEqual(config.lib, ['dom', 'esnext']);
+        if (preset === 'isomorphic')
+            assert.deepEqual(config.lib, ['esnext', 'webworker']);
         if (preset === 'web-preact') {
-            assert.ok(config.lib.includes('dom'));
+            assert.deepEqual(config.lib, ['dom', 'esnext']);
             assert.equal(config.jsx, 'react-jsx');
             assert.equal(config.jsxImportSource, 'preact');
         }
@@ -141,22 +154,56 @@ for (const preset of Object.keys(presets)) {
 }
 
 test('preset file paths are not exported', () => {
-    configure('@snovader/tsconfig/tsconfig.base.json');
+    configure('@snovader/tsconfig/tsconfig.base.json', { noEmit: true });
     const result = compile();
     assert.notEqual(result.status, 0);
     assert.match(result.stdout, /TS6053/);
 });
 
-test('base, Node, browser, and isomorphic consumers compile after installation', () => {
+test('base, Node, browser, and isomorphic consumers typecheck .ts imports without emitting', () => {
     for (const preset of ['base', 'node', 'web', 'isomorphic']) {
-        configure(`@snovader/tsconfig/${preset}`, { outDir: './dist' });
+        configure(`@snovader/tsconfig/${preset}`);
         const result = compile();
         assert.equal(result.status, 0, result.stdout + result.stderr);
-        assert.equal(
-            readFileSync(join(consumer, 'dist/example.d.ts'), 'utf8'),
-            'export declare const answer: number;\n'
-        );
-        rmSync(join(consumer, 'dist'), { recursive: true });
+        assert.deepEqual(emitted(consumer), []);
+    }
+});
+
+test('web and isomorphic presets type DOM and worker iteration without iterable libraries', () => {
+    writeFileSync(
+        join(consumer, 'web.ts'),
+        `export function names(): string[] {
+    const result: string[] = [];
+    for (const element of document.querySelectorAll('a'))
+        result.push(element.href);
+    for (const [key] of new FormData()) result.push(key);
+    for (const node of document.body.childNodes) result.push(node.nodeName);
+    return result;
+}
+`
+    );
+    writeFileSync(
+        join(consumer, 'streams.ts'),
+        `export async function read(
+    stream: ReadableStream<string>,
+    headers: Headers
+): Promise<string[]> {
+    const result: string[] = [];
+    for await (const chunk of stream) result.push(chunk);
+    for (const [key, value] of headers) result.push(key, value);
+    for (const [key] of new URLSearchParams('a=1')) result.push(key);
+    return result;
+}
+`
+    );
+    for (const [preset, source] of [
+        ['web', 'web.ts'],
+        ['web', 'streams.ts'],
+        ['isomorphic', 'streams.ts']
+    ]) {
+        configure(`@snovader/tsconfig/${preset}`, {}, source);
+        const result = compile();
+        assert.equal(result.status, 0, result.stdout + result.stderr);
     }
 });
 
@@ -177,9 +224,8 @@ export function check(value: number): number {
 }
 `
     );
-    configure('@snovader/tsconfig/base', { outDir: './dist' }, 'checks.ts');
+    configure('@snovader/tsconfig/base', {}, 'checks.ts');
     const result = compile();
-    rmSync(join(consumer, 'dist'), { recursive: true, force: true });
     assert.notEqual(result.status, 0);
     assert.match(result.stdout, /checks\.ts\(1,13\): error TS1294/);
     assert.match(result.stdout, /checks\.ts\(3,5\): error TS7028/);
@@ -194,16 +240,89 @@ test('consumers can turn erasableSyntaxOnly off', () => {
     );
     configure(
         '@snovader/tsconfig/base',
-        { erasableSyntaxOnly: false, outDir: './dist' },
+        { erasableSyntaxOnly: false },
         'enum.ts'
     );
     const result = compile();
     assert.equal(result.status, 0, result.stdout + result.stderr);
-    assert.match(
-        readFileSync(join(consumer, 'dist/enum.d.ts'), 'utf8'),
-        /export declare enum Color/
+});
+
+test('consumers emit JavaScript by turning noEmit off and rewriting .ts imports', () => {
+    configure('@snovader/tsconfig/node', {
+        noEmit: false,
+        rewriteRelativeImportExtensions: true,
+        rootDir: '.',
+        outDir: './dist'
+    });
+    const result = compile();
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.equal(
+        readFileSync(join(consumer, 'dist/example.js'), 'utf8'),
+        "import { value } from './value.js';\nexport const answer = value + 1;\n"
     );
+    assert.deepEqual(readdirSync(join(consumer, 'dist')).sort(), [
+        'example.js',
+        'value.js'
+    ]);
     rmSync(join(consumer, 'dist'), { recursive: true });
+});
+
+test('composite preset listed after an environment preset builds project references', () => {
+    const monorepo = join(consumer, 'monorepo');
+    mkdirSync(join(monorepo, 'shared'), { recursive: true });
+    mkdirSync(join(monorepo, 'server'));
+    writeFileSync(
+        join(monorepo, 'shared/one.ts'),
+        'export const one: number = 1;\n'
+    );
+    writeFileSync(
+        join(monorepo, 'shared/index.ts'),
+        "import { one } from './one.ts';\nexport const answer: number = one + 41;\n"
+    );
+    writeFileSync(
+        join(monorepo, 'server/index.ts'),
+        "import { answer } from '../shared/index.ts';\nexport const doubled: number = answer * 2;\n"
+    );
+    const project = (preset, references = []) => ({
+        extends: [
+            `@snovader/tsconfig/${preset}`,
+            '@snovader/tsconfig/composite'
+        ],
+        compilerOptions: { rootDir: '.', outDir: './dist' },
+        include: ['*.ts'],
+        references
+    });
+    writeJson(join(monorepo, 'shared/tsconfig.json'), project('isomorphic'));
+    writeJson(
+        join(monorepo, 'server/tsconfig.json'),
+        project('node', [{ path: '../shared' }])
+    );
+    writeJson(join(monorepo, 'tsconfig.json'), {
+        files: [],
+        references: [{ path: './shared' }, { path: './server' }]
+    });
+
+    const config = showConfig({ cwd: join(monorepo, 'server') });
+    assert.equal(config.composite, true);
+    assert.equal(config.noEmit, false);
+    assert.equal(config.emitDeclarationOnly, true);
+    assert.equal(config.allowImportingTsExtensions, true);
+    assert.deepEqual(config.types, ['node']);
+    assert.equal(config.erasableSyntaxOnly, true);
+    assert.equal(config.strict, true);
+
+    for (let build = 0; build < 2; build++)
+        succeed(process.execPath, [tsc, '--build'], { cwd: monorepo });
+    assert.deepEqual(readdirSync(join(monorepo, 'shared/dist')).sort(), [
+        'index.d.ts',
+        'one.d.ts',
+        'tsconfig.tsbuildinfo'
+    ]);
+    assert.equal(
+        readFileSync(join(monorepo, 'server/dist/index.d.ts'), 'utf8'),
+        'export declare const doubled: number;\n'
+    );
+    assert.ok(!existsSync(join(monorepo, 'server/dist/index.js')));
 });
 
 test('consumer settings override shared options and keep paths local', () => {
@@ -269,12 +388,12 @@ test('Yarn PnP resolves preset subpaths and inherits materialized presets', () =
                 yarn,
                 'node',
                 '-e',
-                `const path = require('node:path'); console.log(JSON.stringify(Object.fromEntries(${JSON.stringify(Object.keys(presets))}.map(name => [name, path.basename(require.resolve('@snovader/tsconfig/' + name))]))));`
+                `const path = require('node:path'); console.log(JSON.stringify(Object.fromEntries(${JSON.stringify(Object.keys(subpaths))}.map(name => [name, path.basename(require.resolve('@snovader/tsconfig/' + name))]))));`
             ],
             { cwd: directory }
         )
     );
-    assert.deepEqual(resolved, presets);
+    assert.deepEqual(resolved, subpaths);
 
     succeed(
         process.execPath,
@@ -292,15 +411,25 @@ test('Yarn PnP resolves preset subpaths and inherits materialized presets', () =
     );
     writeJson(join(directory, 'tsconfig.json'), {
         extends: './.cache/tsconfig/tsconfig.base.json',
-        compilerOptions: { outDir: './dist' },
         files: ['example.ts']
     });
     const config = showConfig({ cwd: directory });
-    assert.equal(config.strict, true);
+    assert.equal(config.noEmit, true);
     assert.equal(config.erasableSyntaxOnly, true);
     succeed(process.execPath, [yarn, 'tsc', '--project', 'tsconfig.json'], {
         cwd: directory
     });
+    assert.deepEqual(emitted(directory), []);
+
+    writeJson(join(directory, 'tsconfig.json'), {
+        extends: [
+            './.cache/tsconfig/tsconfig.base.json',
+            './.cache/tsconfig/tsconfig.composite.json'
+        ],
+        compilerOptions: { rootDir: '.', outDir: './dist' },
+        files: ['example.ts']
+    });
+    succeed(process.execPath, [yarn, 'tsc', '--build'], { cwd: directory });
     assert.equal(
         readFileSync(join(directory, 'dist/example.d.ts'), 'utf8'),
         'export declare const answer: number;\n'
