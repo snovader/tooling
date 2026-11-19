@@ -181,3 +181,5 @@ node --require ./.pnp.cjs --import ./register.mjs app.ts
 - The hook depends on oxc's native binding, which `oxc-transform` installs
   for common platforms. oxc's WebAssembly fallback hasn't been checked for
   detached buffers.
+- Windows paths, on drives and on UNC shares (`\\server\share`), have been
+  tested only by simulating Windows on Linux and macOS, not on Windows.

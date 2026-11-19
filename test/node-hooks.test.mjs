@@ -344,6 +344,176 @@ console.log(JSON.stringify({
     );
 });
 
+/**
+ * Runs the PnP resolve hook on Windows or POSIX paths on any platform. The
+ * hooks choose by `process.platform`, which the probe sets before importing
+ * them. Drives and UNC shares don't exist everywhere, so the probe replaces
+ * fs with the case's files and prints the package.json paths the hook reads.
+ */
+const pathProbe = `import fs from 'node:fs';
+
+const { windows, files, specifier, parentURL } = JSON.parse(process.argv[2]);
+
+if (windows !== (process.platform === 'win32')) {
+    Object.defineProperty(process, 'platform', { value: windows ? 'win32' : 'linux' });
+}
+const { resolve } = await import('@snovader/node-hooks/pnp');
+
+const reads = [];
+fs.readFileSync = path => {
+    reads.push(path);
+    if (!Object.hasOwn(files, path)) {
+        throw Object.assign(new Error('no such file'), { code: 'ENOENT' });
+    }
+    return JSON.stringify(files[path]);
+};
+fs.statSync = path => (Object.hasOwn(files, path) ? { isFile: () => true } : undefined);
+
+try {
+    const context = { parentURL, conditions: ['node', 'import'] };
+    const { url, format } = resolve(specifier, context, () => ({ url: 'next' }));
+    console.log(JSON.stringify({ url, format, reads }));
+} catch (error) {
+    console.log(JSON.stringify({ error: error.code, reads }));
+}
+`;
+
+function probePaths(probeCase) {
+    writeFiles(consumer, { 'platform-paths/probe.mjs': pathProbe });
+    return nodeJson(['platform-paths/probe.mjs', JSON.stringify(probeCase)]);
+}
+
+// A relative path such as package.json would read the working directory's
+const workingDirectoryPackage = { 'package.json': { type: 'module' } };
+
+const pathCases = [
+    {
+        name: 'Windows paths: PnP resolve reads package.json up to the drive root, not the working directory',
+        probe: {
+            windows: true,
+            files: workingDirectoryPackage,
+            specifier: './b.js',
+            parentURL: 'file:///C:/outside/a.js'
+        },
+        expected: {
+            url: 'file:///C:/outside/b.js',
+            format: 'commonjs',
+            reads: ['C:/outside/package.json', 'C:/package.json']
+        }
+    },
+    {
+        name: "Windows paths: PnP resolve reads package.json up to a UNC share's root, not the working directory",
+        probe: {
+            windows: true,
+            files: workingDirectoryPackage,
+            specifier: './b.js',
+            parentURL: 'file://server/share/dir/a.js'
+        },
+        expected: {
+            url: 'file://server/share/dir/b.js',
+            format: 'commonjs',
+            reads: [
+                '//server/share/dir/package.json',
+                '//server/share/package.json'
+            ]
+        }
+    },
+    {
+        name: 'Windows paths: PnP resolve rejects a file URL without a drive, as Node does',
+        probe: {
+            windows: true,
+            files: workingDirectoryPackage,
+            specifier: './b.js',
+            parentURL: 'file:///outside/a.js'
+        },
+        expected: { error: 'ERR_INVALID_FILE_URL_PATH', reads: [] }
+    },
+    {
+        name: 'Windows paths: PnP resolve finds a file without an extension on a UNC share',
+        probe: {
+            windows: true,
+            files: {
+                '//server/share/project/package.json': { type: 'commonjs' },
+                '//server/share/project/value.ts': ''
+            },
+            specifier: './value',
+            parentURL: 'file://server/share/project/a.js'
+        },
+        expected: {
+            url: 'file://server/share/project/value.ts',
+            format: 'commonjs-typescript',
+            reads: ['//server/share/project/package.json']
+        }
+    },
+    {
+        name: 'Windows paths: PnP resolve finds a file without an extension in a percent-encoded drive path',
+        probe: {
+            windows: true,
+            files: {
+                'C:/with space/package.json': { type: 'commonjs' },
+                'C:/with space/value.ts': ''
+            },
+            specifier: './value',
+            parentURL: 'file:///C:/with%20space/a.js'
+        },
+        expected: {
+            url: 'file:///C:/with%20space/value.ts',
+            format: 'commonjs-typescript',
+            reads: ['C:/with space/package.json']
+        }
+    },
+    {
+        name: 'POSIX paths: PnP resolve keeps a first directory named like a Windows drive',
+        probe: {
+            windows: false,
+            files: workingDirectoryPackage,
+            specifier: './b.js',
+            parentURL: 'file:///C:/outside/a.js'
+        },
+        expected: {
+            url: 'file:///C:/outside/b.js',
+            format: 'commonjs',
+            reads: [
+                '/C:/outside/package.json',
+                '/C:/package.json',
+                '/package.json'
+            ]
+        }
+    },
+    {
+        name: 'POSIX paths: PnP resolve keeps backslashes in directory names',
+        probe: {
+            windows: false,
+            files: { '/project/back\\slash/value.js': '' },
+            specifier: './value',
+            parentURL: 'file:///project/back%5Cslash/a.js'
+        },
+        expected: {
+            url: 'file:///project/back%5Cslash/value.js',
+            format: 'commonjs',
+            reads: [
+                '/project/back\\slash/package.json',
+                '/project/package.json',
+                '/package.json'
+            ]
+        }
+    },
+    {
+        name: 'POSIX paths: PnP resolve rejects a file URL with a host, as Node does',
+        probe: {
+            windows: false,
+            files: workingDirectoryPackage,
+            specifier: './b.js',
+            parentURL: 'file://server/share/dir/a.js'
+        },
+        expected: { error: 'ERR_INVALID_FILE_URL_HOST', reads: [] }
+    }
+];
+
+for (const { name, probe, expected } of pathCases) {
+    test(name, () => assert.deepEqual(probePaths(probe), expected));
+}
+
 test('cache hook keeps resolutions apart by directory and conditions', () => {
     writeFiles(consumer, {
         'cache/register.mjs': `import { registerHooks } from 'node:module';

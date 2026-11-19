@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import type { ModuleFormat, ResolveFnOutput } from 'node:module';
 import path from 'node:path/posix';
 import type { PathConditionsMap } from 'resolve-pkg-maps';
-import { extnameFromUrl, fileUrlToPath } from './url.ts';
+import { extnameFromUrl, fileUrlToPath, pathRootLength } from './url.ts';
 
 export interface PackageData {
     directory: string;
@@ -21,10 +21,16 @@ const packageCache = new Map<string, PackageData | false>();
  */
 export function readPackageScope(urlString: string): PackageData | undefined {
     let currentPath = fileUrlToPath(urlString);
+    // Past a Windows drive's root, path.dirname gives the relative "."
+    const rootLength = pathRootLength(currentPath);
 
     while (true) {
         const dirname = path.dirname(currentPath);
-        if (dirname === currentPath || dirname.endsWith('/node_modules')) {
+        if (
+            dirname === currentPath ||
+            dirname.length < rootLength ||
+            dirname.endsWith('/node_modules')
+        ) {
             return;
         }
 
@@ -41,8 +47,9 @@ export function readPackageScope(urlString: string): PackageData | undefined {
 export function readPackage(directory: string): PackageData | undefined {
     const packageData = packageCache.getOrInsertComputed(directory, () => {
         try {
+            // path.join would turn the // of a UNC share into /
             const content = fs.readFileSync(
-                path.join(directory, 'package.json'),
+                `${directory === '/' ? '' : directory}/package.json`,
                 'utf8'
             );
 

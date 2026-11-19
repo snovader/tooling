@@ -6,9 +6,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const fileExtensionPattern = /(\.[^#./?]+)(?:$|\?|#)/;
 const searchOrTrailingHashPattern = /\?|#$/;
 const encodedUrlPattern = /\?|#|%/;
-const plainPathPattern = /^[/:\w.-]+$/;
+const uncRootPattern = /^\/\/[^/]*\/[^/]*/;
 
 const isWindows = process.platform === 'win32';
+
+// An absolute path that a URL keeps as it is, which on Windows is on a drive
+const plainPathPattern = isWindows ? /^[A-Za-z]:\/[/:\w.-]*$/ : /^\/[/:\w.-]*$/;
 
 export function extnameFromUrl(urlString: string): string {
     return fileExtensionPattern.exec(urlString)?.[1] ?? '';
@@ -24,30 +27,56 @@ export function isRelativeOrAbsoluteSpecifier(specifier: string): boolean {
 
 /**
  * Converts a file URL to a path with forward slashes, which `node:path/posix`
- * handles on every platform. Search and hash are dropped.
+ * handles on every platform: `/dir/file`, or on Windows `C:/dir/file` and
+ * `//server/share/file`. Search and hash are dropped.
  */
 export function fileUrlToPath(urlString: string): string {
-    if (encodedUrlPattern.test(urlString)) {
-        const path = fileURLToPath(urlString);
-        return isWindows ? normalizePath(path) : path;
+    // A plain URL without a host, which on Windows starts with a drive letter
+    if (
+        urlString.startsWith('file:///') &&
+        !encodedUrlPattern.test(urlString)
+    ) {
+        if (!isWindows) {
+            return urlString.slice(7 /* file:// */);
+        }
+
+        if (urlString[9] === ':') {
+            return urlString.slice(8 /* file:/// */);
+        }
     }
 
-    // A Windows path has a drive letter after file:///, as in file:///C:/
-    return urlString[9] === ':'
-        ? urlString.slice(8 /* file:/// */)
-        : urlString.slice(7 /* file:// */);
+    // Node decodes the URL, finds a UNC share in a host, and rejects a Windows
+    // path without a drive letter or a host on POSIX
+    return normalizePath(fileURLToPath(urlString, { windows: isWindows }));
+}
+
+/**
+ * Measures the root of a path from `fileUrlToPath`, which is the last
+ * directory that a walk up its parents reaches: `/`, or on Windows a drive's
+ * `C:` or a UNC share's `//server/share`.
+ */
+export function pathRootLength(path: string): number {
+    if (!isWindows) {
+        return 1;
+    }
+
+    if (path[1] === ':') {
+        return 2;
+    }
+
+    return uncRootPattern.exec(path)?.[0].length ?? path.length;
 }
 
 export function pathToFileUrl(path: string): string {
-    const normalizedPath = path.includes('\\') ? normalizePath(path) : path;
+    const normalizedPath = normalizePath(path);
 
     if (plainPathPattern.test(normalizedPath)) {
-        return normalizedPath[1] === ':'
+        return isWindows
             ? `file:///${normalizedPath}`
             : `file://${normalizedPath}`;
     }
 
-    return pathToFileURL(normalizedPath).href;
+    return pathToFileURL(normalizedPath, { windows: isWindows }).href;
 }
 
 /** Carries a specifier's search and hash over to the URL it resolved to */
@@ -70,6 +99,10 @@ export function appendUrlSearchAndHash(
     return urlString;
 }
 
+/**
+ * Turns a Windows path's backslashes into forward slashes. Elsewhere a
+ * backslash belongs to a file name, and the path stays as it is.
+ */
 export function normalizePath(path: string): string {
-    return path.replace(/\\/g, '/');
+    return isWindows ? path.replaceAll('\\', '/') : path;
 }
