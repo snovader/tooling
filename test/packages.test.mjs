@@ -5,7 +5,6 @@ import {
     mkdirSync,
     readFileSync,
     rmSync,
-    symlinkSync,
     writeFileSync
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -17,7 +16,6 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const sandbox = mkdtempSync(join(tmpdir(), 'snovader-tooling-'));
 const consumer = join(sandbox, 'consumer');
 const biome = join(root, 'node_modules/@biomejs/biome/bin/biome');
-const tsc = join(root, 'node_modules/typescript/bin/tsc');
 const yarn = join(root, '.yarn/releases/yarn-4.18.1.cjs');
 let tarballs;
 
@@ -59,21 +57,9 @@ function configureRule(name) {
     });
 }
 
-function configureTypeScript(preset, compilerOptions = {}) {
-    writeFileSync(
-        join(consumer, 'example.ts'),
-        'export const answer: number = 42;\n'
-    );
-    writeJson(join(consumer, 'tsconfig.json'), {
-        extends: `@snovader/tsconfig/tsconfig.${preset}.json`,
-        compilerOptions,
-        files: ['example.ts']
-    });
-}
-
 before(() => {
     mkdirSync(consumer);
-    tarballs = ['biome-config', 'tsconfig'].map(name => {
+    tarballs = ['biome-config'].map(name => {
         const output = succeed('npm', [
             'pack',
             join(root, 'packages', name),
@@ -97,11 +83,6 @@ before(() => {
         '--legacy-peer-deps',
         ...tarballs
     ]);
-    // The consumer supplies its compiler and environment typings.
-    symlinkSync(
-        join(root, 'node_modules/@types'),
-        join(consumer, 'node_modules/@types')
-    );
     writeFileSync(
         join(consumer, 'example.ts'),
         'export const answer: number = 42;\n'
@@ -236,99 +217,6 @@ test('individual rules can be enabled independently', () => {
     assert.equal(result.status, 0, result.stderr);
 });
 
-for (const preset of [
-    'base',
-    'node',
-    'isomorphic',
-    'web',
-    'web-preact',
-    'cloudflare-workers',
-    'cloudflare-workers-test'
-]) {
-    test(`packed TypeScript ${preset} preset resolves and inherits strict checking`, () => {
-        configureTypeScript(preset);
-        const config = JSON.parse(
-            succeed(process.execPath, [tsc, '--showConfig'])
-        );
-        assert.equal(config.compilerOptions.strict, true);
-        assert.equal(config.compilerOptions.module, 'nodenext');
-        assert.equal(config.compilerOptions.emitDeclarationOnly, true);
-        assert.equal(config.compilerOptions.noImplicitOverride, true);
-        if (preset === 'node')
-            assert.deepEqual(config.compilerOptions.types, ['node']);
-        if (preset === 'web')
-            assert.ok(config.compilerOptions.lib.includes('dom'));
-        if (preset === 'isomorphic') {
-            assert.ok(config.compilerOptions.lib.includes('webworker'));
-            assert.ok(!config.compilerOptions.lib.includes('dom'));
-        }
-        if (preset === 'web-preact')
-            assert.equal(config.compilerOptions.jsxImportSource, 'preact');
-        if (preset === 'cloudflare-workers') {
-            assert.deepEqual(config.compilerOptions.types, [
-                '@cloudflare/workers-types'
-            ]);
-        }
-        if (preset === 'cloudflare-workers-test') {
-            assert.deepEqual(config.compilerOptions.types, [
-                '@cloudflare/workers-types',
-                '@cloudflare/vitest-plugin/types'
-            ]);
-        }
-    });
-}
-
-test('base, Node, browser, and isomorphic consumers compile after installation', () => {
-    for (const preset of ['base', 'node', 'web', 'isomorphic']) {
-        configureTypeScript(preset, { outDir: './dist' });
-        succeed(process.execPath, [tsc, '--project', 'tsconfig.json']);
-        assert.equal(
-            readFileSync(join(consumer, 'dist/example.d.ts'), 'utf8'),
-            'export declare const answer: number;\n'
-        );
-        rmSync(join(consumer, 'dist'), { recursive: true });
-    }
-});
-
-test('consumer settings override shared options and keep paths local', () => {
-    configureTypeScript('base', {
-        outDir: './local-output',
-        customConditions: ['example-source'],
-        erasableSyntaxOnly: true,
-        types: ['node']
-    });
-    const config = JSON.parse(succeed(process.execPath, [tsc, '--showConfig']));
-    assert.equal(config.compilerOptions.outDir, './local-output');
-    assert.deepEqual(config.compilerOptions.customConditions, [
-        'example-source'
-    ]);
-    assert.deepEqual(config.compilerOptions.types, ['node']);
-    assert.equal(config.compilerOptions.erasableSyntaxOnly, true);
-});
-
-test('a local file listed after a preset adds options and keeps its types', () => {
-    writeJson(join(consumer, 'tsconfig.local.json'), {
-        compilerOptions: {
-            customConditions: ['example-source'],
-            erasableSyntaxOnly: true
-        }
-    });
-    writeJson(join(consumer, 'tsconfig.json'), {
-        extends: [
-            '@snovader/tsconfig/tsconfig.node.json',
-            './tsconfig.local.json'
-        ],
-        files: ['example.ts']
-    });
-    const config = JSON.parse(succeed(process.execPath, [tsc, '--showConfig']));
-    assert.deepEqual(config.compilerOptions.types, ['node']);
-    assert.deepEqual(config.compilerOptions.customConditions, [
-        'example-source'
-    ]);
-    assert.equal(config.compilerOptions.erasableSyntaxOnly, true);
-    assert.equal(config.compilerOptions.strict, true);
-});
-
 function preparePnpConsumer(directory) {
     mkdirSync(directory);
     writeJson(join(directory, 'package.json'), {
@@ -337,13 +225,10 @@ function preparePnpConsumer(directory) {
         type: 'module',
         dependencies: {
             '@biomejs/biome': '2.6.4',
-            '@snovader/biome-config': `file:${tarballs[0]}`,
-            '@snovader/tsconfig': `file:${tarballs[1]}`,
-            typescript: '7.0.2'
+            '@snovader/biome-config': `file:${tarballs[0]}`
         },
         dependenciesMeta: {
-            '@snovader/biome-config': { unplugged: true },
-            '@snovader/tsconfig': { unplugged: true }
+            '@snovader/biome-config': { unplugged: true }
         }
     });
     writeFileSync(join(directory, 'yarn.lock'), '');
@@ -355,11 +240,11 @@ function preparePnpConsumer(directory) {
     succeed(process.execPath, [yarn, 'install'], { cwd: directory });
 }
 
-test('Yarn PnP can materialize Biome configs and inherit TypeScript presets', () => {
+test('Yarn PnP can materialize Biome configs', () => {
     const directory = join(sandbox, 'pnp-consumer');
     preparePnpConsumer(directory);
     const materialize =
-        "const fs = require('node:fs'); const path = require('node:path'); fs.cpSync(path.dirname(require.resolve('@snovader/biome-config')), '.cache/biome-config', { recursive: true }); fs.cpSync(path.dirname(require.resolve('@snovader/tsconfig/tsconfig.base.json')), '.cache/tsconfig', { recursive: true });";
+        "const fs = require('node:fs'); const path = require('node:path'); fs.cpSync(path.dirname(require.resolve('@snovader/biome-config')), '.cache/biome-config', { recursive: true });";
     succeed(
         process.execPath,
         [yarn, 'node', '--conditions=biome', '-e', materialize],
@@ -378,21 +263,4 @@ test('Yarn PnP can materialize Biome configs and inherit TypeScript presets', ()
     });
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /Declare the function's return type/);
-
-    writeFileSync(
-        join(directory, 'example.ts'),
-        'export const answer: number = 42;\n'
-    );
-    writeJson(join(directory, 'tsconfig.json'), {
-        extends: './.cache/tsconfig/tsconfig.base.json',
-        compilerOptions: { outDir: './dist' },
-        files: ['example.ts']
-    });
-    succeed(process.execPath, [yarn, 'tsc', '--project', 'tsconfig.json'], {
-        cwd: directory
-    });
-    assert.equal(
-        readFileSync(join(directory, 'dist/example.d.ts'), 'utf8'),
-        'export declare const answer: number;\n'
-    );
 });
