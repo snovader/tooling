@@ -107,7 +107,12 @@ const config = {
         'import/first': 'error',
         'import/no-cycle': 'error',
         'import/no-default-export': 'error',
-        'import/no-duplicates': 'error',
+        // One import declaration for each module. Types imported along with
+        // values are marked inline, rather than in an `import type` beside it:
+        // `import { createRequire, type LoadHookSync } from 'node:module'`.
+        // An import of types only stays `import type`, as the rules for type
+        // imports ask.
+        'import/no-duplicates': ['error', { preferInline: true }],
         'import/no-empty-named-blocks': 'error',
         'import/no-mutable-exports': 'error',
         'unicorn/prefer-node-protocol': 'error',

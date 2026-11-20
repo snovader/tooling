@@ -1,7 +1,6 @@
 import { Buffer } from 'node:buffer';
 import fs from 'node:fs';
-import { createRequire } from 'node:module';
-import type { LoadHookSync } from 'node:module';
+import { createRequire, type LoadHookSync } from 'node:module';
 import process from 'node:process';
 import type {
     JsxOptions,
