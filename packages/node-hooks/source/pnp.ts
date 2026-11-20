@@ -1,6 +1,11 @@
 import fs from 'node:fs';
-import module, { createRequire, isBuiltin } from 'node:module';
-import type { LoadHookSync, ModuleFormat, ResolveHookSync } from 'node:module';
+import module, {
+    createRequire,
+    isBuiltin,
+    type LoadHookSync,
+    type ModuleFormat,
+    type ResolveHookSync
+} from 'node:module';
 import process from 'node:process';
 import type * as ResolvePkgMaps from 'resolve-pkg-maps';
 import {

@@ -1,5 +1,8 @@
-import { isBuiltin } from 'node:module';
-import type { ResolveFnOutput, ResolveHookSync } from 'node:module';
+import {
+    isBuiltin,
+    type ResolveFnOutput,
+    type ResolveHookSync
+} from 'node:module';
 import path from 'node:path/posix';
 import { resolveBuiltin } from './internal/packages.ts';
 

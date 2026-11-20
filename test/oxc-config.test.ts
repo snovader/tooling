@@ -260,6 +260,35 @@ describe('packed oxlint base configuration', () => {
         );
     });
 
+    it('reports and merges a type import beside a value import from the same module', () => {
+        writeFileSync(
+            join(consumer, 'shapes.ts'),
+            'export const unit = 1;\nexport interface Shape {\n    readonly width: number;\n}\n'
+        );
+        const diagnostics = lint(
+            'example.ts',
+            "import { unit } from './shapes.ts';\nimport type { Shape } from './shapes.ts';\n\nexport const width = (shape: Shape): number => shape.width * unit;\n"
+        );
+        assert.deepEqual(codes(diagnostics), ['import(no-duplicates)']);
+
+        // oxlint's fix leaves out the space before `type`, which oxfmt adds
+        lint('example.ts', readFileSync(join(consumer, 'example.ts'), 'utf8'), ['--fix']);
+        assert.equal(
+            format('example.ts', readFileSync(join(consumer, 'example.ts'), 'utf8')),
+            "import { unit, type Shape } from './shapes.ts';\n\nexport const width = (shape: Shape): number => shape.width * unit;\n"
+        );
+    });
+
+    it('keeps an import of types only as import type', () => {
+        const source =
+            "import type { Shape } from './shapes.ts';\n\nexport const width = (shape: Shape): number => shape.width;\n";
+        assert.deepEqual(codes(lint('example.ts', source)), []);
+
+        assert.deepEqual(codes(lint('example.ts', source.replace('type {', '{ type'))), [
+            'typescript(no-import-type-side-effects)'
+        ]);
+    });
+
     it('runs type-aware rules through tsgolint', () => {
         const diagnostics = lint(
             'example.ts',
