@@ -340,9 +340,22 @@ const throwerLineCount = thrower.split('\n').length;
  * Runs a module whose source the next hook prepends two lines to, and
  * appends a source map to, which `map` writes from the module's `url`, and
  * returns what it prints: a line that the prepended code sets, and the stack
- * of an error that the module throws at its line 6.
+ * of an error that the module throws at its line 6. The map's comment
+ * starts with `comment`, and `after` follows it.
  */
-function stackThroughNextMap(directory: string, map: string): string {
+interface NextMapOptions {
+    readonly comment?: string;
+    readonly after?: string;
+}
+
+function stackThroughNextMap(
+    directory: string,
+    map: string,
+    {
+        comment = '//# sourceMappingURL=data:application/json;base64,',
+        after = '\n'
+    }: NextMapOptions = {}
+): string {
     writeFiles(consumer, {
         [`${directory}/register.mjs`]: `import { registerHooks } from 'node:module';
 import { load } from '@snovader/node-hooks/typescript';
@@ -356,7 +369,7 @@ registerHooks({
 
         const map = ${map};
         const encoded = Buffer.from(JSON.stringify(map)).toString('base64');
-        const source = \`export const added: number = 1;\\nexport const lines: number = 2;\\n\${loaded.source}\\n//# sourceMappingURL=data:application/json;base64,\${encoded}\\n\`;
+        const source = \`export const added: number = 1;\\nexport const lines: number = 2;\\n\${loaded.source}\\n${comment}\${encoded}${JSON.stringify(after).slice(1, -1)}\`;
         return { ...loaded, source };
     }
 });
@@ -407,6 +420,32 @@ test('TypeScript hook maps stack traces through an index map of sections that th
     );
 
     assert.match(output, /thrower\.ts:6:\d+/u);
+});
+
+test('TypeScript hook maps through a map with a charset, followed by whitespace', () => {
+    const mappings = `;;AAAA${';AACA'.repeat(throwerLineCount - 1)}`;
+    const output = stackThroughNextMap(
+        'next-map-charset',
+        `{ version: 3, sources: [url], names: [], mappings: ${JSON.stringify(mappings)} }`,
+        {
+            comment: '//# sourceMappingURL=data:application/json;charset=utf-8;base64,',
+            after: '\r\n\t \r\n'
+        }
+    );
+
+    assert.match(output, /thrower\.ts:6:\d+/u);
+});
+
+test('TypeScript hook leaves an inline map that code follows, and maps to the code as the next hook gives it', () => {
+    const mappings = `;;AAAA${';AACA'.repeat(throwerLineCount - 1)}`;
+    const output = stackThroughNextMap(
+        'next-map-before-code',
+        `{ version: 3, sources: [url], names: [], mappings: ${JSON.stringify(mappings)} }`,
+        { after: '\nexport const later: number = 3;\n' }
+    );
+
+    // The hook's own map comes last, which Node reads
+    assert.match(output, /thrower\.ts:8:\d+/u);
 });
 
 test('TypeScript hook drops an inline map that is not a source map, and maps to the code as the next hook gives it', () => {

@@ -61,8 +61,11 @@ interface DecodeOffset {
 }
 
 const SOURCE_MAPPING_URL = '//# sourceMappingURL=';
-const inlineSourceMapPattern =
-    /^\/\/# sourceMappingURL=data:application\/json(?:;charset=utf-8)?;base64,([\d+/=A-Za-z]+)\s*$/u;
+/** The starts of a source map's base64 data URL, as tools write it */
+const DATA_URLS = [
+    'data:application/json;base64,',
+    'data:application/json;charset=utf-8;base64,'
+];
 
 const BASE64 =
     'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -79,19 +82,26 @@ const NO_OFFSET: DecodeOffset = { column: 0, source: 0 };
  * isn't a source map, is dropped, as Node would ignore it.
  */
 export function splitInlineSourceMap(source: string): SplitSource {
-    const index = source.lastIndexOf(SOURCE_MAPPING_URL);
+    const end = trimmedEnd(source);
+    // Most modules end in `}` or `;`, which can't end the map's base64, and
+    // need no search of their code
+    if (end === 0 || !isBase64Digit(source.codePointAt(end - 1) ?? 0)) {
+        return { code: source, map: undefined };
+    }
+
+    const index = lastIndexOf(source, SOURCE_MAPPING_URL);
     if (index === -1) {
         return { code: source, map: undefined };
     }
 
-    const match = inlineSourceMapPattern.exec(source.slice(index));
-    if (match === null) {
+    const data = dataUrlData(source, index + SOURCE_MAPPING_URL.length, end);
+    if (data === undefined) {
         return { code: source, map: undefined };
     }
 
     const code = source.slice(0, index);
     try {
-        const json = Buffer.from(match[1], 'base64').toString('utf8');
+        const json = Buffer.from(data, 'base64').toString('utf8');
         const map: unknown = JSON.parse(json);
         return { code, map: isInputSourceMap(map) ? map : undefined };
     } catch {
@@ -150,6 +160,76 @@ export function appendSourceMap(code: string, map: SourceMapJson): string {
     const encoded = Buffer.from(JSON.stringify(map)).toString('base64');
 
     return `${code}\n${SOURCE_MAPPING_URL}data:application/json;base64,${encoded}\n`;
+}
+
+/** Where the whitespace at the end of the source starts */
+function trimmedEnd(source: string): number {
+    let end = source.length;
+    while (end > 0 && isWhitespace(source.codePointAt(end - 1) ?? 0)) {
+        end--;
+    }
+
+    return end;
+}
+
+function isWhitespace(code: number): boolean {
+    // Tab, line feed, carriage return, space
+    return code === 0x09 || code === 0x0a || code === 0x0d || code === 0x20;
+}
+
+/** Whether the code is that of a digit of base64, or its padding */
+function isBase64Digit(code: number): boolean {
+    return (
+        (code >= 0x30 && code <= 0x39) ||
+        (code >= 0x41 && code <= 0x5a) ||
+        (code >= 0x61 && code <= 0x7a) ||
+        code === 0x2b ||
+        code === 0x2f ||
+        code === 0x3d
+    );
+}
+
+/**
+ * The index of the last occurrence of the search string, which this finds
+ * by searching forwards from each occurrence: V8 searches forwards several
+ * times as fast as backwards, through a map's base64 as well
+ */
+function lastIndexOf(source: string, search: string): number {
+    let index = source.indexOf(search);
+    if (index === -1) {
+        return -1;
+    }
+
+    let next = source.indexOf(search, index + 1);
+    while (next !== -1) {
+        index = next;
+        next = source.indexOf(search, index + 1);
+    }
+
+    return index;
+}
+
+/**
+ * The data of a base64 data URL of JSON from the start up to the end, if
+ * the URL is one, and on the source's last line
+ */
+function dataUrlData(
+    source: string,
+    start: number,
+    end: number
+): string | undefined {
+    const prefix = DATA_URLS.find(url => source.startsWith(url, start));
+    if (prefix === undefined) {
+        return undefined;
+    }
+
+    const dataStart = start + prefix.length;
+    const lineEnd = source.indexOf('\n', dataStart);
+    if (lineEnd !== -1 && lineEnd < end) {
+        return undefined;
+    }
+
+    return source.slice(dataStart, end);
 }
 
 function isInputSourceMap(value: unknown): value is InputSourceMap {
