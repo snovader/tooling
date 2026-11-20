@@ -56,6 +56,11 @@ The hook strips the types of `.ts`, `.mts`, and `.cts` files with
 - Syntax that this version of Node supports stays as it is.
 - Invalid syntax fails the import with a `SyntaxError` and oxc's code frame.
 
+The hook strips the source that the next hook loads. A hook that runs after
+it can serve or change the TypeScript, such as one that generates a module.
+What the next hook loads as JavaScript, with the format `module` or
+`commonjs`, stays as it is.
+
 `--no-strip-types` keeps Node from stripping types itself, which it otherwise
 does a second time for CommonJS that an ES module imports (see
 [Limitations](#limitations)).
@@ -82,6 +87,10 @@ them.
 - oxc prints the code anew, so lines and columns in stack traces shift. With
   `--enable-source-maps`, or `process.setSourceMapsEnabled(true)`, the hook
   adds an inline source map, and stack traces show the TypeScript positions.
+- Where the source that the next hook loads ends with an inline source map,
+  the hook's map maps through it, even without `--enable-source-maps`. Node
+  reads only a module's last source map. Node's stripping keeps the positions
+  instead, so that the next hook's map stays valid.
 - oxc also compiles syntax that Node's stripping rejects, such as enums,
   namespaces, and parameter properties.
 - Files inside `node_modules` load as well, where Node refuses to strip them.
@@ -117,7 +126,11 @@ process, by specifier, importing directory, and conditions:
 - Import attributes aren't part of the key.
 - Built-in modules resolve without the hooks after it.
 
-Register it last, so that it runs first.
+Register it after the resolve hooks whose answers don't change, so that it
+runs before them. Register it before a hook whose answers change, such as
+one that mocks modules. Run before such a hook, it would keep the hook's
+first answer, and resolve built-ins without it (see
+[Composing hooks](#composing-hooks)).
 
 ## Yarn Plug'n'Play
 
@@ -173,6 +186,29 @@ registerHooks({ resolve: cache.resolve });
 ```sh
 node --require ./.pnp.cjs --import ./register.mjs app.ts
 ```
+
+## Composing hooks
+
+Node runs the hooks registered last first. Each hook either handles a module
+itself, or passes it to the next hook with `nextResolve` or `nextLoad`. What
+it handles, the hooks after it don't see:
+
+| Hook              | Handles                      | Passes on              |
+| ----------------- | ---------------------------- | ---------------------- |
+| TypeScript `load` | none; strips the result      | every module           |
+| bytes `load`      | imports of the `bytes` type  | other imports          |
+| cache `resolve`   | built-ins, what it resolved  | a first resolution     |
+| PnP `resolve`     | built-ins, what PnP resolves | what PnP can't resolve |
+| PnP `load`        | files of a known format      | other URLs             |
+
+A hook that changes the TypeScript of a module, such as one that moves calls
+above its imports, runs on either side of the TypeScript hook:
+
+- Registered before the TypeScript hook, it changes the TypeScript, and the
+  TypeScript hook maps through its source map.
+- Registered after it, it changes the JavaScript. Its source map has to map
+  through the one that the TypeScript hook appended, or stack traces show
+  the positions in the JavaScript.
 
 ## Limitations
 

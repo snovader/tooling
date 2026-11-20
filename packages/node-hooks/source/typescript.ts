@@ -1,15 +1,17 @@
-import { Buffer } from 'node:buffer';
-import fs from 'node:fs';
-import { createRequire, type LoadHookSync } from 'node:module';
+import {
+    createRequire,
+    type LoadHookSync,
+    type ModuleSource
+} from 'node:module';
 import process from 'node:process';
-import type {
-    JsxOptions,
-    OxcError,
-    TransformOptions,
-    TransformResult
-} from 'oxc-transform';
+import type { JsxOptions, OxcError, TransformOptions } from 'oxc-transform';
 import type * as OxcTransform from 'oxc-transform';
 import { getFileFormat } from './internal/packages.ts';
+import {
+    appendSourceMap,
+    remapSourceMap,
+    splitInlineSourceMap
+} from './internal/source-map.ts';
 import { extnameFromUrl, fileUrlToPath, isFileUrl } from './internal/url.ts';
 
 export interface TypeScriptHookOptions {
@@ -21,14 +23,20 @@ export interface TypeScriptHookOptions {
     jsx?: JsxOptions;
 }
 
-type TypeScriptFormat = 'commonjs' | 'module';
+type TypeScriptFormat = 'commonjs-typescript' | 'module-typescript';
+
+type SourceType = 'commonjs' | 'module';
 
 /** Leaves the syntax that this version of Node runs as it is */
 const target = `node${process.versions.node}`;
 
+const decoder = new TextDecoder();
+
 /**
  * Creates a load hook that strips the types of `.ts`, `.mts`, and `.cts`
- * files with oxc, and compiles `.tsx` files when given JSX options.
+ * files with oxc, and compiles `.tsx` files when given JSX options. It
+ * strips the source that the hooks after it load, so that they can read or
+ * replace it, and leaves what they load as JavaScript as it is.
  */
 export function createLoadHook(
     options: TypeScriptHookOptions = {}
@@ -41,19 +49,28 @@ export function createLoadHook(
             return nextLoad(urlString, context);
         }
 
-        const format = typeScriptFormat(urlString, context.format);
+        // Without a TypeScript format, Node's own load rejects the file
+        // under --no-strip-types
+        const loaded = nextLoad(urlString, {
+            ...context,
+            format: typeScriptFormat(urlString, context.format)
+        });
+
+        const sourceType = sourceTypeOf(loaded.format);
+        if (!sourceType || loaded.source === undefined) {
+            return loaded;
+        }
 
         return {
-            format,
-            source: transformFile(urlString, {
+            ...loaded,
+            format: sourceType,
+            source: transformSource(urlString, decode(loaded.source), {
                 lang,
-                sourceType: format,
+                sourceType,
                 target,
                 typescript: { onlyRemoveTypeImports: true },
-                jsx,
-                sourcemap: process.sourceMapsEnabled
-            }),
-            shortCircuit: true
+                jsx
+            })
         };
     };
 }
@@ -85,9 +102,9 @@ function languageOf(
 }
 
 /**
- * Follows the format that resolution gave the file, which Node's resolver
- * sets for a file with a package type or a `.mts` or `.cts` extension, and
- * the package type otherwise.
+ * The TypeScript format to load the file as, from the format that
+ * resolution gave it, which Node's resolver sets for a file with a package
+ * type or a `.mts` or `.cts` extension, and the package type otherwise
  */
 function typeScriptFormat(
     urlString: string,
@@ -96,28 +113,70 @@ function typeScriptFormat(
     switch (format ?? getFileFormat(urlString)) {
         case 'commonjs':
         case 'commonjs-typescript':
-            return 'commonjs';
+            return 'commonjs-typescript';
 
         default:
-            return 'module';
+            return 'module-typescript';
     }
 }
 
-function transformFile(urlString: string, options: TransformOptions): string {
-    const filePath = fileUrlToPath(urlString);
-    // Yarn PnP patches fs to read files inside zip archives as well
-    const source = fs.readFileSync(filePath, 'utf8');
+/** The source type of what a hook loaded, if it's TypeScript */
+function sourceTypeOf(
+    format: string | null | undefined
+): SourceType | undefined {
+    switch (format) {
+        case 'commonjs-typescript':
+            return 'commonjs';
+
+        case 'module-typescript':
+            return 'module';
+
+        default:
+            return undefined;
+    }
+}
+
+function decode(source: ModuleSource): string {
+    return typeof source === 'string' ? source : decoder.decode(source);
+}
+
+/**
+ * Strips the source's types, and maps the output back to the source. Where
+ * a hook after this one appended a source map, the output maps through it,
+ * since Node reads only the last.
+ */
+function transformSource(
+    urlString: string,
+    source: string,
+    options: TransformOptions
+): string {
+    const { code: input, map: inputMap } = splitInlineSourceMap(source);
 
     const { code, map, errors } = loadOxc().transformSync(
-        filePath,
-        source,
-        options
+        fileUrlToPath(urlString),
+        input,
+        {
+            ...options,
+            sourcemap: process.sourceMapsEnabled || inputMap !== undefined
+        }
     );
     if (errors.length > 0) {
         throw createTransformError(errors);
     }
 
-    return map ? appendSourceMap(code, map, urlString) : code;
+    if (!map) {
+        return code;
+    }
+
+    // oxc prints the code anew. Node resolves `sources` against the module's
+    // URL, where a Windows drive letter would read as a URL scheme, so the
+    // source is named by its URL.
+    return appendSourceMap(
+        code,
+        inputMap
+            ? remapSourceMap(map, inputMap)
+            : { ...map, sources: [urlString] }
+    );
 }
 
 // oxc reports diagnostics instead of throwing; fail the load as a syntax error would
@@ -127,22 +186,6 @@ function createTransformError(errors: OxcError[]): SyntaxError {
         .join('\n');
 
     return new SyntaxError(message);
-}
-
-/**
- * Maps the output back to the source, since oxc prints the code anew. Node
- * resolves `sources` against the module's URL, where a Windows drive letter
- * would read as a URL scheme, so the source is named by its URL.
- */
-function appendSourceMap(
-    code: string,
-    map: NonNullable<TransformResult['map']>,
-    urlString: string
-): string {
-    const json = JSON.stringify({ ...map, sources: [urlString] });
-    const encoded = Buffer.from(json).toString('base64');
-
-    return `${code}\n//# sourceMappingURL=data:application/json;base64,${encoded}\n`;
 }
 
 let oxc: typeof OxcTransform | undefined;
