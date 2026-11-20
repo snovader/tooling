@@ -8,7 +8,7 @@ import {
     rmSync,
     writeFileSync
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { after, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import {
@@ -273,6 +273,186 @@ export function fail(shape: Shape): never {
     );
     assert.match(stack, /thrower\.ts:6:11/u);
     assert.match(stack, /entry\.ts:4:5/u);
+});
+
+test('TypeScript hook strips the TypeScript that the next hook loads, and leaves its JavaScript as it is', () => {
+    writeFiles(consumer, {
+        // Registered before the TypeScript hook, so that it runs after it
+        'next-load/register.mjs': `import { registerHooks } from 'node:module';
+import { load } from '@snovader/node-hooks/typescript';
+
+registerHooks({
+    load(url, context, nextLoad) {
+        if (url.endsWith('/generated.ts')) {
+            const source = "export function label(): string {\\n    return 'generated';\\n}\\n";
+            return { format: 'module-typescript', source, shortCircuit: true };
+        }
+        if (url.endsWith('/compiled.ts')) {
+            const source = "export function label() {\\n    return 'compiled';\\n}\\n";
+            return { format: 'module', source, shortCircuit: true };
+        }
+        return nextLoad(url, context);
+    }
+});
+registerHooks({ load });
+`,
+        'next-load/generated.ts': 'export const label: string = "on disk";\n',
+        'next-load/compiled.ts': 'export const label: string = "on disk";\n',
+        'next-load/entry.ts': `import { label as generated } from './generated.ts';
+import { label as compiled } from './compiled.ts';
+
+console.log(JSON.stringify({
+    values: [generated(), compiled()],
+    // oxc prints its output anew, with double quotes
+    sources: [generated.toString(), compiled.toString()]
+}));
+`
+    });
+
+    assert.deepEqual(
+        nodeJson([
+            '--no-strip-types',
+            '--import',
+            './next-load/register.mjs',
+            'next-load/entry.ts'
+        ]),
+        {
+            values: ['generated', 'compiled'],
+            sources: [
+                'function label() {\n\treturn "generated";\n}',
+                "function label() {\n    return 'compiled';\n}"
+            ]
+        }
+    );
+});
+
+const thrower = `interface Shape {
+    width: number;
+}
+
+export function fail(shape: Shape): never {
+    throw new Error(\`width \${shape.width}\`);
+}
+`;
+const throwerLineCount = thrower.split('\n').length;
+
+/**
+ * Runs a module whose source the next hook prepends two lines to, and
+ * appends a source map to, which `map` writes from the module's `url`, and
+ * returns what it prints: a line that the prepended code sets, and the stack
+ * of an error that the module throws at its line 6. The map's comment
+ * starts with `comment`, and `after` follows it.
+ */
+interface NextMapOptions {
+    readonly comment?: string;
+    readonly after?: string;
+}
+
+function stackThroughNextMap(
+    directory: string,
+    map: string,
+    {
+        comment = '//# sourceMappingURL=data:application/json;base64,',
+        after = '\n'
+    }: NextMapOptions = {}
+): string {
+    writeFiles(consumer, {
+        [`${directory}/register.mjs`]: `import { registerHooks } from 'node:module';
+import { load } from '@snovader/node-hooks/typescript';
+
+registerHooks({
+    load(url, context, nextLoad) {
+        const loaded = nextLoad(url, context);
+        if (!url.endsWith('/thrower.ts')) {
+            return loaded;
+        }
+
+        const map = ${map};
+        const encoded = Buffer.from(JSON.stringify(map)).toString('base64');
+        const source = \`export const added: number = 1;\\nexport const lines: number = 2;\\n\${loaded.source}\\n${comment}\${encoded}${JSON.stringify(after).slice(1, -1)}\`;
+        return { ...loaded, source };
+    }
+});
+registerHooks({ load });
+`,
+        [`${directory}/thrower.ts`]: thrower,
+        [`${directory}/entry.ts`]:
+            "import { added, fail } from './thrower.ts';\n\nconsole.log(`added ${added}`);\ntry {\n    fail({ width: 1 });\n} catch (error) {\n    console.log((error as Error).stack);\n}\n"
+    });
+
+    const output = succeed(
+        process.execPath,
+        [
+            '--enable-source-maps',
+            '--no-strip-types',
+            '--import',
+            `./${directory}/register.mjs`,
+            `${directory}/entry.ts`
+        ],
+        { cwd: consumer }
+    );
+    assert.match(output, /^added 1$/mu);
+    assert.match(output, /entry\.ts:5:5/u);
+    return output;
+}
+
+test('TypeScript hook maps stack traces through a source map that the next hook appends', () => {
+    // Each line after the two prepended ones maps to the line two above it
+    const mappings = `;;AAAA${';AACA'.repeat(throwerLineCount - 1)}`;
+    const output = stackThroughNextMap(
+        'next-map',
+        `{ version: 3, sources: [url], names: [], mappings: ${JSON.stringify(mappings)} }`
+    );
+
+    assert.match(output, /thrower\.ts:6:\d+/u);
+});
+
+test('TypeScript hook maps stack traces through an index map of sections that the next hook appends', () => {
+    // The module's first three lines in one section, and the rest in another
+    const first = 'AAAA;AACA;AACA';
+    const rest = `AAGA${';AACA'.repeat(throwerLineCount - 4)}`;
+    const output = stackThroughNextMap(
+        'next-index-map',
+        `{ version: 3, sections: [
+            { offset: { line: 2, column: 0 }, map: { version: 3, sources: [url], names: [], mappings: '${first}' } },
+            { offset: { line: 5, column: 0 }, map: { version: 3, sources: [url], names: [], mappings: '${rest}' } }
+        ] }`
+    );
+
+    assert.match(output, /thrower\.ts:6:\d+/u);
+});
+
+test('TypeScript hook maps through a map with a charset, followed by whitespace', () => {
+    const mappings = `;;AAAA${';AACA'.repeat(throwerLineCount - 1)}`;
+    const output = stackThroughNextMap(
+        'next-map-charset',
+        `{ version: 3, sources: [url], names: [], mappings: ${JSON.stringify(mappings)} }`,
+        {
+            comment: '//# sourceMappingURL=data:application/json;charset=utf-8;base64,',
+            after: '\r\n\t \r\n'
+        }
+    );
+
+    assert.match(output, /thrower\.ts:6:\d+/u);
+});
+
+test('TypeScript hook leaves an inline map that code follows, and maps to the code as the next hook gives it', () => {
+    const mappings = `;;AAAA${';AACA'.repeat(throwerLineCount - 1)}`;
+    const output = stackThroughNextMap(
+        'next-map-before-code',
+        `{ version: 3, sources: [url], names: [], mappings: ${JSON.stringify(mappings)} }`,
+        { after: '\nexport const later: number = 3;\n' }
+    );
+
+    // The hook's own map comes last, which Node reads
+    assert.match(output, /thrower\.ts:8:\d+/u);
+});
+
+test('TypeScript hook drops an inline map that is not a source map, and maps to the code as the next hook gives it', () => {
+    const output = stackThroughNextMap('next-invalid-map', '{ version: 3 }');
+
+    // Two lines below where it's written, past the prepended lines
+    assert.match(output, /thrower\.ts:8:\d+/u);
 });
 
 test('register fails a module with invalid syntax with a SyntaxError and a code frame', () => {
@@ -559,6 +739,63 @@ console.log(JSON.stringify({
     });
 });
 
+test('cache hook remembers what the next hooks resolve, and leaves the hooks before it to change their answers', () => {
+    // A hook that redirects a module, or a built-in, while a global names it
+    const redirect = `export function resolve(specifier, context, nextResolve) {
+    const { redirects } = globalThis;
+    if (redirects?.[specifier] !== undefined) {
+        return nextResolve(redirects[specifier], context);
+    }
+    return nextResolve(specifier, context);
+}
+`;
+    const register = (order: string): string => `import { registerHooks } from 'node:module';
+import * as cache from '@snovader/node-hooks/cache';
+import * as typescript from '@snovader/node-hooks/typescript';
+import * as redirect from './redirect.mjs';
+
+registerHooks({ load: typescript.load });
+${order}
+`;
+
+    writeFiles(consumer, {
+        'cache-order/redirect.mjs': redirect,
+        // The cache runs after the redirects, and remembers what they lead to
+        'cache-order/cache-inside.mjs': register(
+            'registerHooks({ resolve: cache.resolve });\nregisterHooks({ resolve: redirect.resolve });'
+        ),
+        // The cache runs first, and remembers the first answer of the redirects
+        'cache-order/cache-outside.mjs': register(
+            'registerHooks({ resolve: redirect.resolve });\nregisterHooks({ resolve: cache.resolve });'
+        ),
+        'cache-order/value.ts': "export default 'value' as string;\n",
+        'cache-order/other.ts': "export default 'other' as string;\n",
+        'cache-order/path.ts': "export const sep: string = 'redirected';\n",
+        'cache-order/entry.ts': `const before = await import('./value.ts');
+const sepBefore = (await import('node:path')).sep;
+(globalThis as { redirects?: object }).redirects = {
+    './value.ts': './other.ts',
+    'node:path': new URL('./path.ts', import.meta.url).href
+};
+const after = await import('./value.ts');
+const sepAfter = (await import('node:path')).sep;
+console.log(JSON.stringify({
+    values: [before.default, after.default],
+    builtin: [sepBefore, sepAfter]
+}));
+`
+    });
+
+    assert.deepEqual(
+        nodeJson(['--import', './cache-order/cache-inside.mjs', 'cache-order/entry.ts']),
+        { values: ['value', 'other'], builtin: [sep, 'redirected'] }
+    );
+    assert.deepEqual(
+        nodeJson(['--import', './cache-order/cache-outside.mjs', 'cache-order/entry.ts']),
+        { values: ['value', 'value'], builtin: [sep, sep] }
+    );
+});
+
 test("Yarn PnP projects load TypeScript, and the PnP hooks resolve packages' exports and imports", () => {
     const directory = join(sandbox, 'pnp-consumer');
     writeFiles(directory, {
@@ -574,7 +811,9 @@ test("Yarn PnP projects load TypeScript, and the PnP hooks resolve packages' exp
                 aliased: 'file:./target',
                 'aliased-maps': 'npm:resolve-pkg-maps@^1.0.0',
                 nameless: 'file:./nameless',
-                'resolve-pkg-maps': '^1.0.0'
+                'resolve-pkg-maps': '^1.0.0',
+                // TypeScript in Yarn's zip archive, which the PnP load hook reads
+                typed: 'file:./typed'
             },
             dependenciesMeta: {
                 '@snovader/node-hooks': { unplugged: true }
@@ -600,6 +839,13 @@ test("Yarn PnP projects load TypeScript, and the PnP hooks resolve packages' exp
         'target/feature.js': "export default 'feature';\n",
         'nameless/package.json': { version: '1.0.0', type: 'module' },
         'nameless/index.js': "export default 'nameless';\n",
+        'typed/package.json': {
+            name: 'typed',
+            version: '1.0.0',
+            type: 'module',
+            exports: './index.ts'
+        },
+        'typed/index.ts': "const typed: string = 'typed';\nexport default typed;\n",
         // Only Yarn's CommonJS runtime runs, so the hooks are imported by path
         'import-hooks.mjs': `import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
@@ -632,6 +878,7 @@ import feature from 'aliased/feature';
 import { resolveExports } from 'aliased-maps';
 import imported from 'dual';
 import nameless from 'nameless';
+import typed from 'typed';
 import internal from '#internal';
 
 const required: string = createRequire(import.meta.url)('dual');
@@ -639,7 +886,8 @@ console.log(JSON.stringify({
     dual: [imported, required],
     internal,
     aliased: [aliased, feature, typeof resolveExports],
-    nameless
+    nameless,
+    typed
 }));
 `
     });
@@ -675,7 +923,8 @@ console.log(JSON.stringify(names.map(name => require.resolve(\`@snovader/node-ho
             dual: ['import', 'require'],
             internal: 'internal',
             aliased: ['aliased', 'feature', 'function'],
-            nameless: 'nameless'
+            nameless: 'nameless',
+            typed: 'typed'
         }
     );
 });
