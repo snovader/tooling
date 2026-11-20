@@ -1,6 +1,6 @@
 {
     "name": "@snovader/node-hooks",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "description": "Synchronous Node.js module hooks: TypeScript stripping with oxc, byte imports, a resolution cache, and Yarn Plug'n'Play resolution.",
     "license": "MIT",
     "type": "module",
