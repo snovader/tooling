@@ -1,5 +1,4 @@
 import { Buffer } from 'node:buffer';
-import { SourceMap, type SourceMapPayload } from 'node:module';
 
 /** A source map as the hooks write it, with the fields that Node reads */
 export interface SourceMapJson {
@@ -11,18 +10,54 @@ export interface SourceMapJson {
     sourcesContent?: ReadonlyArray<string | null | undefined>;
 }
 
+/** The fields of a map of one module that remapping reads */
+interface ModuleSourceMap {
+    sources: ReadonlyArray<string | null>;
+    mappings: string;
+    sourceRoot?: string;
+}
+
+/** A map of a part of a module, from where the part starts */
+interface Section {
+    offset: { line: number; column: number };
+    map: ModuleSourceMap;
+}
+
+/** A map of a module in sections, each of which maps a part of it */
+interface IndexSourceMap {
+    sections: readonly Section[];
+}
+
+/** A source map that a hook before this one wrote */
+export type InputSourceMap = IndexSourceMap | ModuleSourceMap;
+
 /** A source that may end with an inline source map, split from it */
 export interface SplitSource {
     code: string;
-    map: SourceMapPayload | undefined;
+    map: InputSourceMap | undefined;
 }
 
-/** A mapping of a position in the generated code, zero-based */
-interface Segment {
-    line: number;
+/**
+ * The segments of each line of a map that map to a source, each as four
+ * numbers: its column, the index of its source, and the line and column in
+ * the source, all zero-based. A line without such segments is empty, so
+ * that the array has no holes, which V8 reads more slowly.
+ */
+type Lines = number[][];
+
+/** Where each segment of a map is, and the sources that it maps to */
+interface MapIndex {
+    lines: Lines;
+    sources: ReadonlyArray<string | null>;
+}
+
+/**
+ * What decoded positions are moved by: the column of the first line, where
+ * a section of an index map starts, and the index of the first source
+ */
+interface DecodeOffset {
     column: number;
-    originalLine: number;
-    originalColumn: number;
+    source: number;
 }
 
 const SOURCE_MAPPING_URL = '//# sourceMappingURL=';
@@ -35,11 +70,13 @@ const BASE64 =
 const COMMA = 0x2c;
 const SEMICOLON = 0x3b;
 
+const NO_OFFSET: DecodeOffset = { column: 0, source: 0 };
+
 /**
  * Splits a source map off the end of a source, where a hook before this one
  * appended it as a base64 data URL. Node reads only a module's last source
- * map, so one elsewhere stays in the code. A map that doesn't parse is
- * dropped, as Node would ignore it.
+ * map, so one elsewhere stays in the code. A map that doesn't parse, or
+ * isn't a source map, is dropped, as Node would ignore it.
  */
 export function splitInlineSourceMap(source: string): SplitSource {
     const index = source.lastIndexOf(SOURCE_MAPPING_URL);
@@ -55,7 +92,8 @@ export function splitInlineSourceMap(source: string): SplitSource {
     const code = source.slice(0, index);
     try {
         const json = Buffer.from(match[1], 'base64').toString('utf8');
-        return { code, map: JSON.parse(json) as SourceMapPayload };
+        const map: unknown = JSON.parse(json);
+        return { code, map: isInputSourceMap(map) ? map : undefined };
     } catch {
         return { code, map: undefined };
     }
@@ -66,56 +104,44 @@ export function splitInlineSourceMap(source: string): SplitSource {
  * to the original sources of `input`, which mapped the code that `map` was
  * generated from. A position maps through the closest mapping of `input`
  * before it on the same line; one on a line that `input` doesn't map is
- * left out.
+ * left out. The sources keep the names that `input` gives them, with its
+ * `sourceRoot`; an index map's sections keep their names without theirs.
  */
 export function remapSourceMap(
     map: SourceMapJson,
-    input: SourceMapPayload
+    input: InputSourceMap
 ): SourceMapJson {
-    const inputMap = new SourceMap(input);
-    const sources: string[] = [];
-    const sourceIndices = new Map<string, number>();
-    const encoder = new MappingsEncoder();
+    const generated = decodeMappings(map.mappings, NO_OFFSET);
+    const original = indexSourceMap(input);
+    const writer = new MappingsWriter(original.sources);
 
-    for (const segment of decodeMappings(map.mappings)) {
-        const entry = inputMap.findEntry(
-            segment.originalLine,
-            segment.originalColumn
-        );
-        if (
-            !('originalSource' in entry) ||
-            entry.generatedLine !== segment.originalLine
-        ) {
-            continue;
+    for (const [line, segments] of generated.entries()) {
+        for (let index = 0; index < segments.length; index += 4) {
+            const originalLine = original.lines[segments[index + 2]];
+            if (originalLine === undefined) {
+                continue;
+            }
+
+            const found = findSegment(originalLine, segments[index + 3]);
+            if (found !== -1) {
+                writer.add(line, segments[index], originalLine, found);
+            }
         }
-
-        let sourceIndex = sourceIndices.get(entry.originalSource);
-        if (sourceIndex === undefined) {
-            sourceIndex = sources.push(entry.originalSource) - 1;
-            sourceIndices.set(entry.originalSource, sourceIndex);
-        }
-
-        encoder.add(
-            segment.line,
-            segment.column,
-            sourceIndex,
-            entry.originalLine,
-            entry.originalColumn
-        );
     }
 
-    // Node's lookups give the sources without the root, as `input` names them
     const sourceRoot =
-        typeof input.sourceRoot === 'string' && input.sourceRoot !== ''
+        'sourceRoot' in input &&
+        typeof input.sourceRoot === 'string' &&
+        input.sourceRoot !== ''
             ? { sourceRoot: input.sourceRoot }
             : {};
 
     return {
         version: 3,
         ...sourceRoot,
-        sources,
+        sources: writer.sources(),
         names: [],
-        mappings: encoder.toString()
+        mappings: writer.mappings()
     };
 }
 
@@ -126,36 +152,129 @@ export function appendSourceMap(code: string, map: SourceMapJson): string {
     return `${code}\n${SOURCE_MAPPING_URL}data:application/json;base64,${encoded}\n`;
 }
 
+function isInputSourceMap(value: unknown): value is InputSourceMap {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+
+    if ('sections' in value) {
+        return Array.isArray(value.sections) && value.sections.every(isSection);
+    }
+
+    return isModuleSourceMap(value);
+}
+
+function isSection(value: unknown): value is Section {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+
+    const { offset, map } = value as Partial<Record<keyof Section, unknown>>;
+    return (
+        typeof offset === 'object' &&
+        offset !== null &&
+        Number.isInteger((offset as { line?: unknown }).line) &&
+        Number.isInteger((offset as { column?: unknown }).column) &&
+        isModuleSourceMap(map)
+    );
+}
+
+function isModuleSourceMap(value: unknown): value is ModuleSourceMap {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+
+    const { sources, mappings } = value as Partial<
+        Record<keyof ModuleSourceMap, unknown>
+    >;
+    return typeof mappings === 'string' && Array.isArray(sources);
+}
+
 /**
- * The segments of the mappings that map to a source, from oxc, whose
- * mappings are valid
+ * Decodes the segments of an input map by line, with those of each section
+ * of an index map moved to where the section starts
  */
-function* decodeMappings(mappings: string): Generator<Segment> {
-    const fields: number[] = [];
-    let line = 0;
-    let column = 0;
+function indexSourceMap(map: InputSourceMap): MapIndex {
+    if (!('sections' in map)) {
+        return {
+            lines: decodeMappings(map.mappings, NO_OFFSET),
+            sources: map.sources
+        };
+    }
+
+    const lines: Lines = [];
+    const sources: Array<string | null> = [];
+    for (const { offset, map: sectionMap } of map.sections) {
+        const decoded = decodeMappings(sectionMap.mappings, {
+            column: offset.column,
+            source: sources.length
+        });
+        sources.push(...sectionMap.sources);
+        addSection(lines, decoded, offset.line);
+    }
+
+    return { lines, sources };
+}
+
+/**
+ * Adds the lines of a section from the line where it starts, where the
+ * section before it may end
+ */
+function addSection(lines: Lines, section: Lines, start: number): void {
+    while (lines.length < start) {
+        lines.push([]);
+    }
+
+    for (const [index, segments] of section.entries()) {
+        const line = lines[start + index];
+        if (line === undefined) {
+            lines.push(segments);
+        } else {
+            line.push(...segments);
+        }
+    }
+}
+
+/**
+ * Decodes the segments of mappings that map to a source, by line, moved by
+ * the offset. Invalid mappings decode to positions that map nowhere useful,
+ * rather than throwing, as Node's own decoding does.
+ */
+function decodeMappings(mappings: string, offset: DecodeOffset): Lines {
+    const { length } = mappings;
+    const lines: Lines = [];
+    const fields = [0, 0, 0, 0, 0];
+    let segments: number[] = [];
+    let fieldCount = 0;
+    let column = offset.column;
+    let source = offset.source;
     let originalLine = 0;
     let originalColumn = 0;
     let value = 0;
     let shift = 0;
 
-    for (let index = 0; index <= mappings.length; index++) {
-        // A last semicolon ends the last segment
-        const char = mappings.codePointAt(index) ?? SEMICOLON;
+    for (let index = 0; index <= length; index++) {
+        // A semicolon past the end ends the last line. Reading a character
+        // there instead took a third of the time of remapping a small map,
+        // as did codePointAt, though the mappings are base64.
+        // oxlint-disable-next-line unicorn/prefer-code-point -- As above
+        const char = index < length ? mappings.charCodeAt(index) : SEMICOLON;
 
         if (char === COMMA || char === SEMICOLON) {
-            if (fields.length > 0) {
+            if (fieldCount > 0) {
                 column += fields[0];
             }
-            if (fields.length >= 4) {
+            if (fieldCount >= 4) {
+                source += fields[1];
                 originalLine += fields[2];
                 originalColumn += fields[3];
-                yield { line, column, originalLine, originalColumn };
+                segments.push(column, source, originalLine, originalColumn);
             }
-            fields.length = 0;
+            fieldCount = 0;
 
             if (char === SEMICOLON) {
-                line++;
+                lines.push(segments);
+                segments = [];
                 column = 0;
             }
             continue;
@@ -165,13 +284,15 @@ function* decodeMappings(mappings: string): Generator<Segment> {
         const digit = base64Value(char);
         value += (digit & 31) << shift;
         if ((digit & 32) === 0) {
-            fields.push(value & 1 ? -(value >>> 1) : value >>> 1);
+            fields[fieldCount++] = value & 1 ? -(value >>> 1) : value >>> 1;
             value = 0;
             shift = 0;
         } else {
             shift += 5;
         }
     }
+
+    return lines;
 }
 
 /** The value of a base64 digit, from its code */
@@ -192,48 +313,102 @@ function base64Value(code: number): number {
     return code === 0x2b ? 62 : 63;
 }
 
-/** Writes the mappings of a source map, segment by segment, in order */
-class MappingsEncoder {
-    #mappings = '';
-    #line = 0;
-    #lineHasSegments = false;
+/**
+ * The offset in a line's segments of the last segment at or before the
+ * column, or -1, by a binary search of the segments, which are in order
+ */
+function findSegment(segments: readonly number[], column: number): number {
+    let low = 0;
+    let high = segments.length / 4 - 1;
+    let found = -1;
+
+    while (low <= high) {
+        const middle = (low + high) >>> 1;
+        if (segments[middle * 4] <= column) {
+            found = middle * 4;
+            low = middle + 1;
+        } else {
+            high = middle - 1;
+        }
+    }
+
+    return found;
+}
+
+/**
+ * Writes the mappings of a remapped source map, segment by segment in order,
+ * and the sources that they map to, in the order that they first appear
+ */
+class MappingsWriter {
+    readonly #inputSources: ReadonlyArray<string | null>;
+    /** The index of each input source among the sources, or -1 */
+    readonly #sourceIndices: Int32Array;
+    readonly #sources: Array<string | null> = [];
+    readonly #lines: string[] = [];
+    #lineMappings = '';
     #column = 0;
-    #sourceIndex = 0;
+    #source = 0;
     #originalLine = 0;
     #originalColumn = 0;
 
+    constructor(inputSources: ReadonlyArray<string | null>) {
+        this.#inputSources = inputSources;
+        this.#sourceIndices = new Int32Array(inputSources.length).fill(-1);
+    }
+
+    /** Maps the column of the line to the segment of the input map */
     add(
         line: number,
         column: number,
-        sourceIndex: number,
-        originalLine: number,
-        originalColumn: number
+        segments: readonly number[],
+        offset: number
     ): void {
-        if (line > this.#line) {
-            this.#mappings += ';'.repeat(line - this.#line);
-            this.#line = line;
-            this.#lineHasSegments = false;
-            this.#column = 0;
-        }
-        if (this.#lineHasSegments) {
-            this.#mappings += ',';
-        }
+        this.#moveToLine(line);
 
-        this.#mappings +=
+        const source = this.#sourceIndex(segments[offset + 1]);
+        const originalLine = segments[offset + 2];
+        const originalColumn = segments[offset + 3];
+
+        if (this.#lineMappings !== '') {
+            this.#lineMappings += ',';
+        }
+        this.#lineMappings +=
             encodeValue(column - this.#column) +
-            encodeValue(sourceIndex - this.#sourceIndex) +
+            encodeValue(source - this.#source) +
             encodeValue(originalLine - this.#originalLine) +
             encodeValue(originalColumn - this.#originalColumn);
 
-        this.#lineHasSegments = true;
         this.#column = column;
-        this.#sourceIndex = sourceIndex;
+        this.#source = source;
         this.#originalLine = originalLine;
         this.#originalColumn = originalColumn;
     }
 
-    toString(): string {
-        return this.#mappings;
+    sources(): Array<string | null> {
+        return this.#sources;
+    }
+
+    mappings(): string {
+        return [...this.#lines, this.#lineMappings].join(';');
+    }
+
+    /** Ends the lines before this one, whose columns start again from 0 */
+    #moveToLine(line: number): void {
+        while (this.#lines.length < line) {
+            this.#lines.push(this.#lineMappings);
+            this.#lineMappings = '';
+            this.#column = 0;
+        }
+    }
+
+    #sourceIndex(inputSource: number): number {
+        let index = this.#sourceIndices[inputSource];
+        if (index === -1) {
+            index = this.#sources.push(this.#inputSources[inputSource]) - 1;
+            this.#sourceIndices[inputSource] = index;
+        }
+
+        return index;
     }
 }
 

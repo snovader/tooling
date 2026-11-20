@@ -326,8 +326,7 @@ console.log(JSON.stringify({
     );
 });
 
-test('TypeScript hook maps stack traces through a source map that the next hook appends', () => {
-    const thrower = `interface Shape {
+const thrower = `interface Shape {
     width: number;
 }
 
@@ -335,12 +334,17 @@ export function fail(shape: Shape): never {
     throw new Error(\`width \${shape.width}\`);
 }
 `;
-    // The next hook adds two lines above the module, and maps each line back
-    const lineCount = thrower.split('\n').length;
-    const mappings = `;;AAAA${';AACA'.repeat(lineCount - 1)}`;
+const throwerLineCount = thrower.split('\n').length;
 
+/**
+ * Runs a module whose source the next hook prepends two lines to, and
+ * appends a source map to, which `map` writes from the module's `url`, and
+ * returns what it prints: a line that the prepended code sets, and the stack
+ * of an error that the module throws at its line 6.
+ */
+function stackThroughNextMap(directory: string, map: string): string {
     writeFiles(consumer, {
-        'next-map/register.mjs': `import { registerHooks } from 'node:module';
+        [`${directory}/register.mjs`]: `import { registerHooks } from 'node:module';
 import { load } from '@snovader/node-hooks/typescript';
 
 registerHooks({
@@ -350,7 +354,7 @@ registerHooks({
             return loaded;
         }
 
-        const map = { version: 3, sources: [url], names: [], mappings: ${JSON.stringify(mappings)} };
+        const map = ${map};
         const encoded = Buffer.from(JSON.stringify(map)).toString('base64');
         const source = \`export const added: number = 1;\\nexport const lines: number = 2;\\n\${loaded.source}\\n//# sourceMappingURL=data:application/json;base64,\${encoded}\\n\`;
         return { ...loaded, source };
@@ -358,8 +362,8 @@ registerHooks({
 });
 registerHooks({ load });
 `,
-        'next-map/thrower.ts': thrower,
-        'next-map/entry.ts':
+        [`${directory}/thrower.ts`]: thrower,
+        [`${directory}/entry.ts`]:
             "import { added, fail } from './thrower.ts';\n\nconsole.log(`added ${added}`);\ntry {\n    fail({ width: 1 });\n} catch (error) {\n    console.log((error as Error).stack);\n}\n"
     });
 
@@ -369,14 +373,47 @@ registerHooks({ load });
             '--enable-source-maps',
             '--no-strip-types',
             '--import',
-            './next-map/register.mjs',
-            'next-map/entry.ts'
+            `./${directory}/register.mjs`,
+            `${directory}/entry.ts`
         ],
         { cwd: consumer }
     );
     assert.match(output, /^added 1$/mu);
-    assert.match(output, /thrower\.ts:6:\d+/u);
     assert.match(output, /entry\.ts:5:5/u);
+    return output;
+}
+
+test('TypeScript hook maps stack traces through a source map that the next hook appends', () => {
+    // Each line after the two prepended ones maps to the line two above it
+    const mappings = `;;AAAA${';AACA'.repeat(throwerLineCount - 1)}`;
+    const output = stackThroughNextMap(
+        'next-map',
+        `{ version: 3, sources: [url], names: [], mappings: ${JSON.stringify(mappings)} }`
+    );
+
+    assert.match(output, /thrower\.ts:6:\d+/u);
+});
+
+test('TypeScript hook maps stack traces through an index map of sections that the next hook appends', () => {
+    // The module's first three lines in one section, and the rest in another
+    const first = 'AAAA;AACA;AACA';
+    const rest = `AAGA${';AACA'.repeat(throwerLineCount - 4)}`;
+    const output = stackThroughNextMap(
+        'next-index-map',
+        `{ version: 3, sections: [
+            { offset: { line: 2, column: 0 }, map: { version: 3, sources: [url], names: [], mappings: '${first}' } },
+            { offset: { line: 5, column: 0 }, map: { version: 3, sources: [url], names: [], mappings: '${rest}' } }
+        ] }`
+    );
+
+    assert.match(output, /thrower\.ts:6:\d+/u);
+});
+
+test('TypeScript hook drops an inline map that is not a source map, and maps to the code as the next hook gives it', () => {
+    const output = stackThroughNextMap('next-invalid-map', '{ version: 3 }');
+
+    // Two lines below where it's written, past the prepended lines
+    assert.match(output, /thrower\.ts:8:\d+/u);
 });
 
 test('register fails a module with invalid syntax with a SyntaxError and a code frame', () => {
