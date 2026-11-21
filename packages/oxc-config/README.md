@@ -67,11 +67,15 @@ overrides. The project's own `rules` and `overrides` come last.
   ignore case: a project with other names renames its files, or turns
   `unicorn/filename-case` off for them. Each setting has a comment that says
   why.
-  Configuration files (`*.config.ts`) may export defaults, tests may allocate
-  arrays of holes and pass callbacks that return values where nothing is
-  returned, and JavaScript files don't need `readonly`.
+  Configuration files (`*.config.ts`) may export defaults, tests may assign
+  values typed `any`, such as `expect.any()`, and pass callbacks that return
+  values where nothing is returned, and JavaScript files don't need
+  `readonly`.
 - `oxlint/vitest`: oxlint's rules for tests that import from `vitest`, where
   helpers whose names start with `expect` count as assertions.
+  `vitest/require-mock-type-parameters` is off, as it also asks for type
+  arguments on `vi.fn(implementation)`, which takes its type from the
+  implementation.
 - `oxlint/hypotes`: hypotes' rules for tests that import from `hypotes`, from
   the plugin that it publishes. Install `hypotes` 0.1.
 - `oxlint/preact`: the rules of hooks, exhaustive dependencies, keys in lists,
@@ -100,6 +104,39 @@ const route = useCallback(
     [url]
 );
 ```
+
+## Missing values and conditions
+
+`eslint/eqeqeq` requires `===` and `!==`, except in a comparison with `null`.
+`value == null` matches both null and undefined, so use it, or `!= null`, to
+check for a missing value. Compare strictly only where null and undefined
+mean different things. No rule reports a strict comparison with null.
+
+`typescript/strict-boolean-expressions` accepts a nullable boolean, number or
+string as a condition, and an `any`. It reports an object that is always
+truthy. `typescript/prefer-nullish-coalescing` still reports `name || 'none'`
+on a nullable `name`, as `??` tells an empty string from a missing one.
+
+## Rules that the base turns off
+
+Besides the rules that TypeScript reports itself, and those that limit
+length or require JSDoc tags, the base turns these off:
+
+| Rule                            | Why                                                                       |
+| ------------------------------- | ------------------------------------------------------------------------- |
+| `unicorn/no-array-sort`         | It also reports a copy made to be sorted, where `toSorted()` copies twice |
+| `unicorn/no-array-reverse`      | The same, for `.reverse()` and `toReversed()`                             |
+| `unicorn/no-new-array`          | Arrays are allocated at their length and filled by index                  |
+| `unicorn/prefer-at`             | Indexed access has a type without `undefined`                             |
+| `unicorn/prefer-code-point`     | Encodings handle UTF-16 code units one by one                             |
+| `unicorn/prefer-math-trunc`     | `value \| 0` converts to int32                                            |
+| `eslint/require-unicode-regexp` | `no-misleading-character-class` asks for `u` where a pattern needs it     |
+| `eslint/no-await-in-loop`       | An await in a loop is sequential on purpose                               |
+| `eslint/require-await`          | `typescript/require-await` reports the same, with type information        |
+
+The base reports an `oxlint-disable` directive that disables nothing. So a
+directive for one of these rules is an error once the rule is off: remove it,
+along with the project's own `'off'` for the rule.
 
 ## sort-named-imports
 

@@ -43,6 +43,11 @@ intent, not a requirement to preserve every detail.
   Use blank lines between distinct steps and meaningful intermediate variables
   where they clarify the sequence. Preserve efficient execution when restructuring
   expressions; readability does not require extra copies or traversals.
+- Check for a missing value with `== null` or `!= null`, which match both
+  null and undefined. Compare strictly, with `=== null` or `=== undefined`,
+  only where null and undefined mean different things. The base's `eqeqeq`
+  allows the loose comparison with null, and no other. This is guidance:
+  no rule reports a strict comparison.
 - Use domain terminology consistently. Comments should explain non-obvious
   constraints, algorithms, units, external behavior, or implementation tradeoffs.
   Document public contracts where callers need that information.
@@ -113,21 +118,34 @@ intent, not a requirement to preserve every detail.
 ### In step with benk, hypotes, and tafla
 
 - `@snovader/oxc-config` shares the formatting and lint rules of benk,
-  hypotes, and tafla. Each of them keeps a configuration of its own, and none
-  extends the package yet.
-- The base has the rules that their configurations have in common, with the
-  comments that say why, and `unicorn/filename-case`, which benk and hypotes
-  turn on, and which tafla's files don't follow yet. A rule that only some of
-  them set for reasons of their own stays in theirs, such as
-  `import/no-relative-parent-imports`, `no-await-in-loop`, or
-  `no-restricted-imports`.
+  hypotes, and tafla. Each of them extends the base from an
+  `oxlint.config.ts` of its own, which adds its ignored paths, its
+  restricted imports, and the rules that it sets for reasons of its own.
+  tafla extends `oxlint/hypotes` too. hypotes lints its tests with the
+  plugin in its source, with the list of rules that the preset has.
+- The base has the rules that suit all of them, with the comments that say
+  why. A rule that only some of them set for reasons of their own stays in
+  theirs, such as `import/no-relative-parent-imports`,
+  `no-restricted-imports`, or `unicorn/prefer-spread`.
+- A rule that two or more of them turn off or loosen for a reason that
+  isn't the project's own goes off in the base, or gets the looser options
+  there, as `no-await-in-loop`, `unicorn/no-new-array`, and
+  `unicorn/prefer-at` did in 0.3.0. The projects then remove the setting
+  from theirs.
+- Turning a rule off in the base makes a consumer's
+  `oxlint-disable` directive for it unused, which the base reports as an
+  error. So that is a breaking change too, and the projects remove those
+  directives when they take the version.
 - `oxlint/hypotes` turns on the rules of hypotes' plugin that hypotes and
   tafla turn on, and `oxlint/vitest` the same rules, by oxlint's `vitest`
-  names. `snovader/sort-named-imports` is the rule that hypotes and tafla
-  have in their own plugins, with the same message and fix.
+  names, except `require-mock-type-parameters`. oxlint's rule also asks for
+  type arguments on `vi.fn(implementation)`, so the Vitest preset turns it
+  off. `snovader/sort-named-imports` is the rule that hypotes and tafla had
+  in their own plugins, with the same message and fix.
 - When one of them changes a rule that the package shares, compare the three
-  configurations again. Change the base or the preset, its comment, and its
-  tests in the same change, and release it as the change above says.
+  configurations again, on their default branches. Change the base or the
+  preset, its comment, and its tests in the same change, and release it as
+  the change above says.
 
 ## Module hooks
 

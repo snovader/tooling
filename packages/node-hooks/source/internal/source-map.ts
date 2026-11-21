@@ -337,7 +337,6 @@ function decodeMappings(mappings: string, offset: DecodeOffset): Lines {
         // A semicolon past the end ends the last line. Reading a character
         // there instead took a third of the time of remapping a small map,
         // as did codePointAt, though the mappings are base64.
-        // oxlint-disable-next-line unicorn/prefer-code-point -- As above
         const char = index < length ? mappings.charCodeAt(index) : SEMICOLON;
 
         if (char === COMMA || char === SEMICOLON) {

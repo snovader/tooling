@@ -73,6 +73,19 @@ const config = {
             'error',
             { ignoreArrowShorthand: true }
         ],
+        // A condition tests a boolean, or a value that may be missing: a
+        // nullable boolean, number or string, or an `any`, such as parsed
+        // JSON. An object that's always truthy is still reported, and so is
+        // `||` where `??` would do, by `prefer-nullish-coalescing`.
+        'typescript/strict-boolean-expressions': [
+            'error',
+            {
+                allowAny: true,
+                allowNullableBoolean: true,
+                allowNullableNumber: true,
+                allowNullableString: true
+            }
+        ],
         // A JSDoc cast, `/** @type {T} */ (value)`, lies inline with the
         // value that it types
         'eslint/no-inline-comments': [
@@ -126,7 +139,9 @@ const config = {
 
         'eslint/curly': 'error',
         'eslint/default-param-last': 'error',
-        'eslint/eqeqeq': 'error',
+        // `== null` and `!= null` match both null and undefined, which is how
+        // to check for a missing value. Every other comparison is strict.
+        'eslint/eqeqeq': ['error', 'always', { null: 'ignore' }],
         'eslint/no-else-return': ['error', { allowElseIf: false }],
         'eslint/no-lonely-if': 'error',
         'eslint/no-param-reassign': 'error',
@@ -191,6 +206,31 @@ const config = {
         'unicorn/no-useless-undefined': 'off',
         'unicorn/no-object-as-default-parameter': 'off',
         'eslint/no-shadow': 'off',
+        // They also report `.sort()` and `.reverse()` on a copy made to be
+        // sorted, such as `Float64Array.from(values).sort()`, where
+        // `toSorted()` would copy twice
+        'unicorn/no-array-sort': 'off',
+        'unicorn/no-array-reverse': 'off',
+        // Arrays allocated at their length and filled by index, and arrays of
+        // holes, which `toStrictEqual` tells from arrays of undefined
+        'unicorn/no-new-array': 'off',
+        // Indexed access, whose type has no `undefined` to handle, UTF-16
+        // code units, which encodings handle one by one, and conversions to
+        // int32 with `| 0`
+        'unicorn/prefer-at': 'off',
+        'unicorn/prefer-code-point': 'off',
+        'unicorn/prefer-math-trunc': 'off',
+        // A `u` flag on every regular expression doesn't say which of them
+        // handle text beyond ASCII. `no-misleading-character-class` asks for
+        // it where a pattern needs it.
+        'eslint/require-unicode-regexp': 'off',
+        // An await in a loop is sequential on purpose: steps that depend on
+        // the one before, files written in order, or variants timed one at
+        // a time
+        'eslint/no-await-in-loop': 'off',
+        // `typescript/require-await` reports the same, with type
+        // information, so it knows a function that returns a promise
+        'eslint/require-await': 'off',
         // No arbitrary limits of length
         'eslint/max-lines': 'off',
         'eslint/max-lines-per-function': 'off',
@@ -221,12 +261,12 @@ const config = {
         },
         {
             // Tests pass mocks, and callbacks that return values, to setters
-            // that take callbacks that return nothing, and allocate arrays of
-            // holes, which `toStrictEqual` tells from arrays of undefined
+            // that take callbacks that return nothing, and expect asymmetric
+            // matchers, such as `expect.any()`, which are typed `any`
             files: ['**/*.test.ts', '**/*.test.tsx'],
             rules: {
                 'typescript/strict-void-return': 'off',
-                'unicorn/no-new-array': 'off'
+                'typescript/no-unsafe-assignment': 'off'
             }
         },
         {
