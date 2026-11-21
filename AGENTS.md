@@ -70,10 +70,6 @@ intent, not a requirement to preserve every detail.
   where the index is known to be in range, and a UTF-16 code unit with
   `charCodeAt`, where no surrogate pair can start there. `.at()` and
   `codePointAt()` return a type with `undefined` to handle.
-- Write a function inside another as an arrow function, and one at the top
-  level of a module as a declaration. A top-level function that takes its
-  type from an annotation, such as a hook typed `LoadHookSync`, is an arrow
-  function too.
 - Fix what a rule reports rather than suppressing it. Where the code that
   the rule asks for reads worse, keep the code with an `oxlint-disable`
   directive that names the rule and says why. Where two or more of the
