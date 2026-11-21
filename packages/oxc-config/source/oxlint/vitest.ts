@@ -27,9 +27,15 @@ const config = {
         'vitest/no-conditional-tests': 'error',
         'vitest/valid-title': 'error',
         'vitest/valid-describe-callback': 'error',
-        // Mocks are typed, and hoisted from where they're written
-        'vitest/require-mock-type-parameters': 'error',
-        'vitest/hoisted-apis-on-top': 'error'
+        // Mocks are hoisted from where they're written
+        'vitest/hoisted-apis-on-top': 'error',
+
+        // Turned off
+
+        // It also asks for type arguments on `vi.fn(implementation)`, which
+        // takes its type from the implementation. The plugin runs it with
+        // the base's categories unless it's turned off.
+        'vitest/require-mock-type-parameters': 'off'
     }
 } satisfies OxlintConfig;
 

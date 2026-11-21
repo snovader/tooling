@@ -118,6 +118,13 @@ function codesOf(diagnostics: readonly Diagnostic[], code: string): string[] {
     return codes(diagnostics).filter(found => found === code);
 }
 
+/** The rules of a plugin that reported a file, in order */
+function reportedBy(plugin: string, filename: string, source: string): string[] {
+    return codes(lint(filename, source))
+        .filter(code => code.startsWith(`${plugin}(`))
+        .toSorted();
+}
+
 describe('packed oxfmt configuration', () => {
     it('indents by four spaces, with single quotes, semicolons, and no trailing commas', () => {
         assert.equal(
@@ -306,16 +313,119 @@ describe('packed oxlint base configuration', () => {
         assert.match(diagnostics[0].message, /Unused oxlint-disable directive/u);
     });
 
-    it('lets configurations export defaults, and tests allocate arrays of holes', () => {
+    it('lets configurations export defaults', () => {
         assert.deepEqual(codes(lint('example.config.ts', 'export default {};\n')), []);
         assert.deepEqual(codes(lint('example.ts', 'export default {};\n')), [
             'import(no-default-export)'
         ]);
+    });
 
-        const holes = 'export const holes: unknown[] = new Array(3);\n';
-        assert.deepEqual(codesOf(lint('example.test.ts', holes), 'unicorn(no-new-array)'), []);
-        assert.deepEqual(codesOf(lint('example.ts', holes), 'unicorn(no-new-array)'), [
-            'unicorn(no-new-array)'
+    it('lets tests assign matchers typed any, which other files may not', () => {
+        const source = "export const expected = { name: 'example', size: JSON.parse('1') };\n";
+        const code = 'typescript(no-unsafe-assignment)';
+        assert.deepEqual(codesOf(lint('example.test.ts', source), code), []);
+        assert.deepEqual(codesOf(lint('example.ts', source), code), [code]);
+    });
+
+    it('accepts == null and != null for a missing value, and no other loose comparison', () => {
+        assert.deepEqual(
+            reportedBy(
+                'eslint',
+                'example.ts',
+                'export function isMissing(value: string | null | undefined): boolean {\n    return value == null;\n}\n\nexport function isPresent(value: string | null | undefined): boolean {\n    return value != null;\n}\n'
+            ),
+            []
+        );
+        assert.deepEqual(
+            reportedBy(
+                'eslint',
+                'example.ts',
+                'export function isZero(value: number | string): boolean {\n    return value == 0;\n}\n\nexport function isUnset(value: string | undefined): boolean {\n    return value == undefined;\n}\n'
+            ),
+            ['eslint(eqeqeq)', 'eslint(eqeqeq)']
+        );
+    });
+
+    it('accepts nullable primitives and any as conditions, but not objects', () => {
+        assert.deepEqual(
+            reportedBy(
+                'typescript',
+                'example.ts',
+                "export function describe(\n    name: string | undefined,\n    count: number | null,\n    enabled?: boolean\n): string {\n    const parsed: { readonly label?: string } = JSON.parse('{}');\n    if (!name || !count || !enabled || !JSON.parse('0')) {\n        return 'none';\n    }\n\n    return parsed.label ? name : 'unlabelled';\n}\n"
+            ).filter(code => code !== 'typescript(no-unsafe-assignment)'),
+            []
+        );
+        assert.deepEqual(
+            reportedBy(
+                'typescript',
+                'example.ts',
+                "export function describe(options: { readonly name: string }): string {\n    return options ? options.name : 'none';\n}\n"
+            ),
+            ['typescript(strict-boolean-expressions)']
+        );
+    });
+
+    it('still reports || on a nullable value, where ?? tells an empty one from a missing one', () => {
+        assert.deepEqual(
+            reportedBy(
+                'typescript',
+                'example.ts',
+                "export function label(name: string | undefined): string {\n    return name || 'none';\n}\n"
+            ),
+            ['typescript(prefer-nullish-coalescing)']
+        );
+    });
+
+    it('accepts sorting and reversing a copy in place, and arrays allocated at their length', () => {
+        assert.deepEqual(
+            reportedBy(
+                'unicorn',
+                'example.ts',
+                'export function sorted(values: Iterable<number>): Float64Array {\n    return Float64Array.from(values).sort();\n}\n\nexport function reversed(values: readonly string[]): string[] {\n    return [...values].reverse();\n}\n\nexport function squares(length: number): number[] {\n    const result = new Array<number>(length);\n    for (let i = 0; i < length; i++) {\n        result[i] = i * i;\n    }\n\n    return result;\n}\n'
+            ),
+            []
+        );
+    });
+
+    it('accepts indexed access, UTF-16 code units, and conversions to int32', () => {
+        assert.deepEqual(
+            reportedBy(
+                'unicorn',
+                'example.ts',
+                'export function last(values: readonly number[]): number {\n    return values[values.length - 1];\n}\n\nexport function unit(text: string, index: number): number {\n    return text.charCodeAt(index);\n}\n\nexport function letter(unit: number): string {\n    return String.fromCharCode(unit);\n}\n\nexport function toInt32(value: number): number {\n    return value | 0;\n}\n'
+            ),
+            []
+        );
+    });
+
+    it('asks for the u flag only where a pattern needs it', () => {
+        assert.deepEqual(
+            reportedBy('eslint', 'example.ts', 'export const DIGITS = /^[0-9]+$/;\n'),
+            []
+        );
+        assert.deepEqual(
+            reportedBy('eslint', 'example.ts', 'export const THUMBS = /^[\u{1F44D}]$/;\n'),
+            ['eslint(no-misleading-character-class)']
+        );
+    });
+
+    it('accepts an await in a loop', () => {
+        assert.deepEqual(
+            reportedBy(
+                'eslint',
+                'example.ts',
+                'export async function runInOrder(\n    steps: ReadonlyArray<() => Promise<void>>\n): Promise<void> {\n    for (const step of steps) {\n        await step();\n    }\n}\n'
+            ),
+            []
+        );
+    });
+
+    it('reports an async function that awaits nothing once, with type information', () => {
+        const source =
+            'export async function answer(): Promise<number> {\n    return 42;\n}\n\nexport async function later(): Promise<number> {\n    return Promise.resolve(42);\n}\n';
+        assert.deepEqual(reportedBy('eslint', 'example.ts', source), []);
+        assert.deepEqual(reportedBy('typescript', 'example.ts', source), [
+            'typescript(require-await)'
         ]);
     });
 
@@ -420,6 +530,18 @@ describe('packed oxlint presets', () => {
             'vitest(no-focused-tests)',
             'vitest(prefer-to-have-length)'
         ]);
+    });
+
+    it("Vitest's accepts a mock that takes its type from its implementation", () => {
+        configureOxlint(consumer, ['vitest']);
+        const diagnostics = lint(
+            'example.test.ts',
+            "import { expect, it, vi } from 'vitest';\n\nit('doubles', () => {\n    const double = vi.fn((value: number) => value * 2);\n    const callback = vi.fn();\n    callback(double(2));\n\n    expect(double).toHaveBeenCalledWith(2);\n});\n"
+        );
+        assert.deepEqual(
+            codes(diagnostics).filter(code => code.startsWith('vitest(')),
+            []
+        );
     });
 
     it("hypotes' loads hypotes' plugin and runs its rules for tests", () => {
