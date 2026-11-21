@@ -85,7 +85,7 @@ export function splitInlineSourceMap(source: string): SplitSource {
     const end = trimmedEnd(source);
     // Most modules end in `}` or `;`, which can't end the map's base64, and
     // need no search of their code
-    if (end === 0 || !isBase64Digit(source.codePointAt(end - 1) ?? 0)) {
+    if (end === 0 || !isBase64Digit(source.charCodeAt(end - 1))) {
         return { code: source, map: undefined };
     }
 
@@ -95,7 +95,7 @@ export function splitInlineSourceMap(source: string): SplitSource {
     }
 
     const data = dataUrlData(source, index + SOURCE_MAPPING_URL.length, end);
-    if (data === undefined) {
+    if (data == null) {
         return { code: source, map: undefined };
     }
 
@@ -128,7 +128,7 @@ export function remapSourceMap(
     for (const [line, segments] of generated.entries()) {
         for (let index = 0; index < segments.length; index += 4) {
             const originalLine = original.lines[segments[index + 2]];
-            if (originalLine === undefined) {
+            if (originalLine == null) {
                 continue;
             }
 
@@ -165,7 +165,7 @@ export function appendSourceMap(code: string, map: SourceMapJson): string {
 /** Where the whitespace at the end of the source starts */
 function trimmedEnd(source: string): number {
     let end = source.length;
-    while (end > 0 && isWhitespace(source.codePointAt(end - 1) ?? 0)) {
+    while (end > 0 && isWhitespace(source.charCodeAt(end - 1))) {
         end--;
     }
 
@@ -219,7 +219,7 @@ function dataUrlData(
     end: number
 ): string | undefined {
     const prefix = DATA_URLS.find(url => source.startsWith(url, start));
-    if (prefix === undefined) {
+    if (prefix == null) {
         return undefined;
     }
 
@@ -307,7 +307,7 @@ function addSection(lines: Lines, section: Lines, start: number): void {
 
     for (const [index, segments] of section.entries()) {
         const line = lines[start + index];
-        if (line === undefined) {
+        if (line == null) {
             lines.push(segments);
         } else {
             line.push(...segments);

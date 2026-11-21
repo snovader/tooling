@@ -3,17 +3,15 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // The hooks run for every module, so the common case of a plain URL or path
 // is converted with string operations rather than by parsing a URL.
-const fileExtensionPattern = /(\.[^#./?]+)(?:$|\?|#)/u;
-const searchOrTrailingHashPattern = /\?|#$/u;
-const encodedUrlPattern = /\?|#|%/u;
-const uncRootPattern = /^\/\/[^/]*\/[^/]*/u;
+const fileExtensionPattern = /(\.[^#./?]+)(?:$|\?|#)/;
+const searchOrTrailingHashPattern = /\?|#$/;
+const encodedUrlPattern = /\?|#|%/;
+const uncRootPattern = /^\/\/[^/]*\/[^/]*/;
 
 const isWindows = process.platform === 'win32';
 
 // An absolute path that a URL keeps as it is, which on Windows is on a drive
-const plainPathPattern = isWindows
-    ? /^[A-Za-z]:\/[/:\w.-]*$/u
-    : /^\/[/:\w.-]*$/u;
+const plainPathPattern = isWindows ? /^[A-Za-z]:\/[/:\w.-]*$/ : /^\/[/:\w.-]*$/;
 
 export function extnameFromUrl(urlString: string): string {
     return fileExtensionPattern.exec(urlString)?.[1] ?? '';
@@ -89,10 +87,7 @@ export function appendUrlSearchAndHash(
 ): string {
     if (searchOrTrailingHashPattern.test(specifier)) {
         const parsedUrl = URL.parse(specifier, base);
-        if (
-            parsedUrl !== null &&
-            (parsedUrl.search !== '' || parsedUrl.hash !== '')
-        ) {
+        if (parsedUrl?.search || parsedUrl?.hash) {
             const url = new URL(
                 `${parsedUrl.search}${parsedUrl.hash}`,
                 urlString

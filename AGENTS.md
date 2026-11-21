@@ -48,6 +48,38 @@ intent, not a requirement to preserve every detail.
   only where null and undefined mean different things. The base's `eqeqeq`
   allows the loose comparison with null, and no other. This is guidance:
   no rule reports a strict comparison.
+- Test a nullable string, number, or boolean by its truthiness, as
+  `if (value)`, rather than with `!== undefined && !== ''` or `=== true`,
+  where an empty string, 0, or NaN means the same as a missing value. Where
+  one of them is a value to keep, such as an empty string that parses
+  further, check with `== null`.
+- Write a default for a missing value as `a ?? b`. Use `a || b` only where
+  an empty string or 0 is replaced too, on a value that isn't nullable, or
+  say so beside it: `prefer-nullish-coalescing` reports `||` on a nullable
+  value.
+- Sort or reverse a copy that the function owns in place, with `.sort()` or
+  `.reverse()`: an array that it made, or that `filter`, `map`, or a spread
+  returned. `toSorted()` and `toReversed()` are for an array that belongs to
+  the caller.
+- Give a regular expression the `u` flag only where it needs one: for
+  `\p{…}`, `\u{…}`, or a character class or quantifier that has to take a
+  character beyond the Basic Multilingual Plane as one. The flag also
+  changes which escapes are valid, so check both before adding or removing
+  it.
+- Read an element by its index, as `values[0]` or `text[text.length - 1]`,
+  where the index is known to be in range, and a UTF-16 code unit with
+  `charCodeAt`, where no surrogate pair can start there. `.at()` and
+  `codePointAt()` return a type with `undefined` to handle.
+- Write a function inside another as an arrow function, and one at the top
+  level of a module as a declaration. A top-level function that takes its
+  type from an annotation, such as a hook typed `LoadHookSync`, is an arrow
+  function too.
+- Fix what a rule reports rather than suppressing it. Where the code that
+  the rule asks for reads worse, keep the code with an `oxlint-disable`
+  directive that names the rule and says why. Where two or more of the
+  projects would need the same directive, change the base instead, as
+  [In step with benk, hypotes, and tafla](#in-step-with-benk-hypotes-and-tafla)
+  describes.
 - Use domain terminology consistently. Comments should explain non-obvious
   constraints, algorithms, units, external behavior, or implementation tradeoffs.
   Document public contracts where callers need that information.
@@ -286,6 +318,12 @@ intent, not a requirement to preserve every detail.
 - Use the Yarn release in `.yarn/releases`, which `.yarnrc.yml` names. The
   repository installs into `node_modules`; the tests make their own Yarn PnP
   projects.
+- Yarn installs a version only once it's a day old, by its default
+  `npmMinimalAgeGate`. `.yarnrc.yml` exempts `@snovader/*` and `hypotes`
+  with `npmPreapprovedPackages`, so that a version of the owner's packages
+  installs on the day it's published. A test's PnP project is outside the
+  repository and doesn't read that file, so the one that installs hypotes
+  from the registry sets the exception itself.
 - Dependabot updates the dependencies and the actions daily, with oxc's
   packages in one group. `.github/workflows/dependabot.yml` approves its pull
   requests and turns on auto-merge, so that each merges once `Checks` passes.

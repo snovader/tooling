@@ -55,18 +55,18 @@ export const resolve: ResolveHookSync = (specifier, context, nextResolve) => {
         resolved = new URL(specifier, issuer).href;
     } else if (specifier[0] === '#') {
         resolved = resolvePrivateRequest(specifier, issuer, conditions);
-        if (resolved === undefined) {
+        if (!resolved) {
             return nextResolve(specifier, context);
         }
     } else {
         resolved = resolveRequest(specifier, issuer, conditions);
-        if (resolved === undefined) {
+        if (!resolved) {
             return nextResolve(specifier, context);
         }
     }
 
     resolved = resolveWithExtension(resolved);
-    if (resolved === undefined) {
+    if (!resolved) {
         return nextResolve(specifier, context);
     }
 
@@ -113,7 +113,7 @@ function resolveRequest(
     const subpath = parts.slice(sliceIndex).join('/');
 
     const unqualified = tryResolveToUnqualified(packageName, specifier, issuer);
-    if (unqualified === undefined || unqualified === '') {
+    if (!unqualified) {
         return;
     }
 
@@ -252,7 +252,7 @@ function loadResolvePkgMaps(): typeof ResolvePkgMaps {
         'resolve-pkg-maps',
         import.meta.url
     );
-    if (resolved === undefined || resolved === '') {
+    if (!resolved) {
         throw new Error(
             "@snovader/node-hooks/pnp needs its peer dependency 'resolve-pkg-maps' to resolve packages' exports and imports"
         );

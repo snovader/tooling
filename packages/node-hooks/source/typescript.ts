@@ -157,7 +157,7 @@ function transformSource(
         input,
         {
             ...options,
-            sourcemap: process.sourceMapsEnabled || inputMap !== undefined
+            sourcemap: process.sourceMapsEnabled || inputMap != null
         }
     );
     if (errors.length > 0) {
