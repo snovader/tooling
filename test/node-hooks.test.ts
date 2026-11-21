@@ -43,7 +43,7 @@ interface PathCase {
 const packageDirectory = join(ROOT, 'packages/node-hooks');
 const register = '@snovader/node-hooks/register';
 const entryPoints = ['register', 'typescript', 'bytes', 'cache', 'pnp'];
-const protectorInvalidation = /Invalidating protector cell ArrayBufferDetaching/u;
+const protectorInvalidation = /Invalidating protector cell ArrayBufferDetaching/;
 
 const sandbox = createSandbox();
 const consumer = join(sandbox, 'consumer');
@@ -89,7 +89,7 @@ function largeModule(functionCount: number, exportKeyword = 'export '): string {
 
 function assertProtectorIntact(result: Result): void {
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /loaded/u);
+    assert.match(result.stdout, /loaded/);
     assert.doesNotMatch(result.stdout + result.stderr, protectorInvalidation);
 }
 
@@ -132,7 +132,7 @@ test('packing with npm fails, as npm would keep the exports that name the source
         env
     });
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /Pack and publish @snovader\/node-hooks with Yarn/u);
+    assert.match(result.stderr, /Pack and publish @snovader\/node-hooks with Yarn/);
     assert.ok(!readdirSync(sandbox).some(file => file.startsWith('snovader-node-hooks-')));
 });
 
@@ -183,7 +183,7 @@ test('register loads TypeScript inside node_modules, which Node refuses', () => 
 
     const stripped = node(['packaged/entry.mjs']);
     assert.notEqual(stripped.status, 0);
-    assert.match(stripped.stderr, /ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING/u);
+    assert.match(stripped.stderr, /ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING/);
 });
 
 test('register keeps an import of only inline types for its side effects, as Node does', () => {
@@ -271,8 +271,8 @@ export function fail(shape: Shape): never {
         ['--enable-source-maps', '--import', register, 'maps/entry.ts'],
         { cwd: consumer }
     );
-    assert.match(stack, /thrower\.ts:6:11/u);
-    assert.match(stack, /entry\.ts:4:5/u);
+    assert.match(stack, /thrower\.ts:6:11/);
+    assert.match(stack, /entry\.ts:4:5/);
 });
 
 test('TypeScript hook strips the TypeScript that the next hook loads, and leaves its JavaScript as it is', () => {
@@ -391,8 +391,8 @@ registerHooks({ load });
         ],
         { cwd: consumer }
     );
-    assert.match(output, /^added 1$/mu);
-    assert.match(output, /entry\.ts:5:5/u);
+    assert.match(output, /^added 1$/m);
+    assert.match(output, /entry\.ts:5:5/);
     return output;
 }
 
@@ -404,7 +404,7 @@ test('TypeScript hook maps stack traces through a source map that the next hook 
         `{ version: 3, sources: [url], names: [], mappings: ${JSON.stringify(mappings)} }`
     );
 
-    assert.match(output, /thrower\.ts:6:\d+/u);
+    assert.match(output, /thrower\.ts:6:\d+/);
 });
 
 test('TypeScript hook maps stack traces through an index map of sections that the next hook appends', () => {
@@ -419,7 +419,7 @@ test('TypeScript hook maps stack traces through an index map of sections that th
         ] }`
     );
 
-    assert.match(output, /thrower\.ts:6:\d+/u);
+    assert.match(output, /thrower\.ts:6:\d+/);
 });
 
 test('TypeScript hook maps through a map with a charset, followed by whitespace', () => {
@@ -433,7 +433,7 @@ test('TypeScript hook maps through a map with a charset, followed by whitespace'
         }
     );
 
-    assert.match(output, /thrower\.ts:6:\d+/u);
+    assert.match(output, /thrower\.ts:6:\d+/);
 });
 
 test('TypeScript hook leaves an inline map that code follows, and maps to the code as the next hook gives it', () => {
@@ -445,14 +445,14 @@ test('TypeScript hook leaves an inline map that code follows, and maps to the co
     );
 
     // The hook's own map comes last, which Node reads
-    assert.match(output, /thrower\.ts:8:\d+/u);
+    assert.match(output, /thrower\.ts:8:\d+/);
 });
 
 test('TypeScript hook drops an inline map that is not a source map, and maps to the code as the next hook gives it', () => {
     const output = stackThroughNextMap('next-invalid-map', '{ version: 3 }');
 
     // Two lines below where it's written, past the prepended lines
-    assert.match(output, /thrower\.ts:8:\d+/u);
+    assert.match(output, /thrower\.ts:8:\d+/);
 });
 
 test('register fails a module with invalid syntax with a SyntaxError and a code frame', () => {
@@ -471,8 +471,8 @@ test('register fails a module with invalid syntax with a SyntaxError and a code 
         message: string;
     };
     assert.equal(name, 'SyntaxError');
-    assert.match(message, /Unexpected token/u);
-    assert.match(message, /invalid\.ts:1:/u);
+    assert.match(message, /Unexpected token/);
+    assert.match(message, /invalid\.ts:1:/);
 });
 
 test('register loads TypeScript from paths that URLs percent-encode', () => {
@@ -510,7 +510,7 @@ export const view = <p title="greeting">{'hello'}</p>;
 
     const unhandled = node(['--import', register, 'jsx/entry.mjs']);
     assert.notEqual(unhandled.status, 0);
-    assert.match(unhandled.stderr, /ERR_UNKNOWN_FILE_EXTENSION/u);
+    assert.match(unhandled.stderr, /ERR_UNKNOWN_FILE_EXTENSION/);
 });
 
 test('bytes hook imports a file as a Uint8Array of its contents', () => {

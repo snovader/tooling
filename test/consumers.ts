@@ -69,7 +69,7 @@ export function createSandbox(): string {
  * its exports with those of its publishConfig, and returns the tarball's path
  */
 export function pack(workspace: string, sandbox: string): string {
-    const tarball = join(sandbox, `${workspace.replaceAll(/\W+/gu, '-')}.tgz`);
+    const tarball = join(sandbox, `${workspace.replaceAll(/\W+/g, '-')}.tgz`);
     succeed(
         process.execPath,
         [YARN, 'workspace', workspace, 'pack', '--out', tarball],

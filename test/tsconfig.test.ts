@@ -105,7 +105,7 @@ function compile(options: Options = { cwd: consumer }): Result {
 
 /** The files that tsc wrote to a directory */
 function emitted(directory: string): string[] {
-    return readdirSync(directory).filter(name => /\.(?:js|d\.ts|tsbuildinfo)$/u.test(name));
+    return readdirSync(directory).filter(name => /\.(?:js|d\.ts|tsbuildinfo)$/.test(name));
 }
 
 for (const preset of Object.keys(PRESETS)) {
@@ -154,7 +154,7 @@ test('preset file paths are not exported', () => {
     configure('@snovader/tsconfig/tsconfig.base.json', { noEmit: true });
     const result = compile();
     assert.notEqual(result.status, 0);
-    assert.match(result.stdout, /TS6053/u);
+    assert.match(result.stdout, /TS6053/);
 });
 
 test('base, Node, browser, and isomorphic consumers typecheck .ts imports without emitting', () => {
@@ -224,10 +224,10 @@ export function check(value: number): number {
     configure('@snovader/tsconfig/base', {}, 'checks.ts');
     const result = compile();
     assert.notEqual(result.status, 0);
-    assert.match(result.stdout, /checks\.ts\(1,13\): error TS1294/u);
-    assert.match(result.stdout, /checks\.ts\(3,5\): error TS7028/u);
-    assert.match(result.stdout, /checks\.ts\(5,9\): error TS7029/u);
-    assert.match(result.stdout, /checks\.ts\(11,5\): error TS7027/u);
+    assert.match(result.stdout, /checks\.ts\(1,13\): error TS1294/);
+    assert.match(result.stdout, /checks\.ts\(3,5\): error TS7028/);
+    assert.match(result.stdout, /checks\.ts\(5,9\): error TS7029/);
+    assert.match(result.stdout, /checks\.ts\(11,5\): error TS7027/);
 });
 
 test("base relies on TypeScript 7's strict and side-effect import checks", () => {
@@ -246,9 +246,9 @@ export const count: number = null;
     assert.equal(config.noUncheckedSideEffectImports, undefined);
     const result = compile();
     assert.notEqual(result.status, 0);
-    assert.match(result.stdout, /defaults\.ts\(1,8\): error TS2882/u);
-    assert.match(result.stdout, /defaults\.ts\(2,26\): error TS7006/u);
-    assert.match(result.stdout, /defaults\.ts\(5,14\): error TS2322/u);
+    assert.match(result.stdout, /defaults\.ts\(1,8\): error TS2882/);
+    assert.match(result.stdout, /defaults\.ts\(2,26\): error TS7006/);
+    assert.match(result.stdout, /defaults\.ts\(5,14\): error TS2322/);
 });
 
 test('consumers can turn erasableSyntaxOnly off', () => {
@@ -274,7 +274,7 @@ test('consumers emit JavaScript by turning noEmit off and rewriting .ts imports'
         readFileSync(join(consumer, 'dist/example.js'), 'utf8'),
         "import { value } from './value.js';\nexport const answer = value + 1;\n"
     );
-    assert.deepEqual(readdirSync(join(consumer, 'dist')).toSorted(), ['example.js', 'value.js']);
+    assert.deepEqual(readdirSync(join(consumer, 'dist')).sort(), ['example.js', 'value.js']);
     rmSync(join(consumer, 'dist'), { recursive: true });
 });
 
@@ -317,7 +317,7 @@ test('composite preset listed after an environment preset builds project referen
     for (let build = 0; build < 2; build++) {
         succeed(process.execPath, [TSC, '--build'], { cwd: monorepo });
     }
-    assert.deepEqual(readdirSync(join(monorepo, 'shared/dist')).toSorted(), [
+    assert.deepEqual(readdirSync(join(monorepo, 'shared/dist')).sort(), [
         'index.d.ts',
         'one.d.ts',
         'tsconfig.tsbuildinfo'

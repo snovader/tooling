@@ -30,7 +30,7 @@ const OXLINT = join(ROOT, 'node_modules/oxlint/bin/oxlint');
 
 /** The message of the plugin's rule */
 const SORT_MESSAGE =
-    /^Expected "[^"]+" before "[^"]+": names in lower case, then upper case, then types, each in natural order$/u;
+    /^Expected "[^"]+" before "[^"]+": names in lower case, then upper case, then types, each in natural order$/;
 
 const sandbox = createSandbox();
 const consumer = join(sandbox, 'consumer');
@@ -38,7 +38,7 @@ const tarball = pack('@snovader/oxc-config', sandbox);
 
 // The consumer installs the package, and hypotes for its preset, and runs
 // the repository's oxfmt, oxlint and tsgolint
-installNodeModules(consumer, [tarball, 'hypotes@0.1.0']);
+installNodeModules(consumer, [tarball, 'hypotes@0.3.1']);
 const consumerOptions: Options = {
     cwd: consumer,
     env: { ...process.env, OXLINT_TSGOLINT_PATH: join(ROOT, 'node_modules/.bin/tsgolint') }
@@ -122,7 +122,7 @@ function codesOf(diagnostics: readonly Diagnostic[], code: string): string[] {
 function reportedBy(plugin: string, filename: string, source: string): string[] {
     return codes(lint(filename, source))
         .filter(code => code.startsWith(`${plugin}(`))
-        .toSorted();
+        .sort();
 }
 
 describe('packed oxfmt configuration', () => {
@@ -310,7 +310,7 @@ describe('packed oxlint base configuration', () => {
             '// oxlint-disable-next-line eslint/no-var\nexport const value = 1;\n'
         );
         assert.equal(diagnostics.length, 1);
-        assert.match(diagnostics[0].message, /Unused oxlint-disable directive/u);
+        assert.match(diagnostics[0].message, /Unused oxlint-disable directive/);
     });
 
     it('lets configurations export defaults', () => {
@@ -526,7 +526,7 @@ describe('packed oxlint presets', () => {
             "import { expect, it } from 'vitest';\n\nfunction expectEven(value: number): void {\n    expect(value % 2).toBe(0);\n}\n\nit.only('uses a helper', () => {\n    expectEven(2);\n});\nit('checks a length', () => {\n    expect([1].length).toBe(1);\n});\n"
         );
         const found = codes(diagnostics).filter(code => code.startsWith('vitest('));
-        assert.deepEqual(found.toSorted(), [
+        assert.deepEqual(found.sort(), [
             'vitest(no-focused-tests)',
             'vitest(prefer-to-have-length)'
         ]);
@@ -551,7 +551,7 @@ describe('packed oxlint presets', () => {
             "import { expect, it } from 'hypotes';\n\nfunction expectEven(value: number): void {\n    expect(value % 2).toBe(0);\n}\n\nit.only('uses a helper', () => {\n    expectEven(2);\n});\nit('checks a length', () => {\n    expect([1].length).toBe(1);\n});\n"
         );
         const found = codes(diagnostics).filter(code => code.startsWith('hypotes('));
-        assert.deepEqual(found.toSorted(), [
+        assert.deepEqual(found.sort(), [
             'hypotes(no-focused-tests)',
             'hypotes(prefer-to-have-length)'
         ]);
@@ -565,7 +565,7 @@ describe('packed oxlint presets', () => {
         );
         const found = codes(diagnostics).filter(code => code.startsWith('react'));
         // React's own rule for hooks reports a conditional call too
-        assert.deepEqual(found.toSorted(), [
+        assert.deepEqual(found.sort(), [
             'react(hooks)',
             'react(jsx-key)',
             'react(self-closing-comp)',
@@ -610,7 +610,7 @@ describe('packed configurations under Yarn PnP', () => {
             {
                 dependencies: {
                     '@snovader/oxc-config': `file:${tarball}`,
-                    hypotes: '0.1.0',
+                    hypotes: '0.3.1',
                     oxfmt: '^0.79.0',
                     oxlint: '^1.94.0',
                     'oxlint-tsgolint': '^7.0.2007'
@@ -619,7 +619,9 @@ describe('packed configurations under Yarn PnP', () => {
                 // disk rather than in a zip archive
                 dependenciesMeta: { hypotes: { unplugged: true } }
             },
-            // hypotes 0.1.0 is younger than Yarn's default minimal age
+            // The consumer is outside the repository, whose .yarnrc.yml it
+            // doesn't read, and a new version of hypotes is younger than
+            // Yarn's default minimal age
             ['npmPreapprovedPackages:', '  - hypotes']
         );
         writeFileSync(
@@ -700,6 +702,6 @@ describe('packed configurations under Yarn PnP', () => {
         writeFileSync(join(packed, 'example.ts'), 'export const value: number = 1;\n');
         const result = run(process.execPath, [YARN, 'oxlint', 'example.ts'], { cwd: packed });
         assert.notEqual(result.status, 0);
-        assert.match(result.stdout + result.stderr, /Failed to load JS plugin/u);
+        assert.match(result.stdout + result.stderr, /Failed to load JS plugin/);
     });
 });

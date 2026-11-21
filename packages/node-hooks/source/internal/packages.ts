@@ -47,7 +47,7 @@ export function readPackageScope(urlString: string): PackageData | undefined {
 export function readPackage(directory: string): PackageData | undefined {
     // Node 24 has no Map.prototype.getOrInsertComputed
     let packageData = packageCache.get(directory);
-    if (packageData === undefined) {
+    if (packageData == null) {
         packageData = readPackageFile(directory);
         packageCache.set(directory, packageData);
     }

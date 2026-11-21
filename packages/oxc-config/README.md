@@ -77,7 +77,7 @@ overrides. The project's own `rules` and `overrides` come last.
   arguments on `vi.fn(implementation)`, which takes its type from the
   implementation.
 - `oxlint/hypotes`: hypotes' rules for tests that import from `hypotes`, from
-  the plugin that it publishes. Install `hypotes` 0.1.
+  the plugin that it publishes. Install `hypotes` 0.3.
 - `oxlint/preact`: the rules of hooks, exhaustive dependencies, keys in lists,
   and self-closing elements, with the react plugin's other rules of the base's
   categories. `react-in-jsx-scope` is off, as the compiler imports Preact's

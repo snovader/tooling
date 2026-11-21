@@ -74,9 +74,7 @@ function sortedSpecifiers(
         specifier,
         group: groupOf(specifier, declaration)
     }));
-    const sorted = entries
-        .toSorted(compareEntries)
-        .map(entry => entry.specifier);
+    const sorted = entries.sort(compareEntries).map(entry => entry.specifier);
 
     return [specifiers, sorted];
 }
