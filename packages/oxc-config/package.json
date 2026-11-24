@@ -73,7 +73,7 @@
     "hypotes": "^0.3.0",
     "oxfmt": "^0.79.0",
     "oxlint": "^1.94.0",
-    "oxlint-tsgolint": "^7.0.2007"
+    "oxlint-tsgolint": "^7.0.2008"
   },
   "peerDependenciesMeta": {
     "hypotes": {
@@ -93,7 +93,7 @@
     "@snovader/tsconfig": "workspace:^",
     "oxfmt": "^0.79.0",
     "oxlint": "^1.94.0",
-    "oxlint-tsgolint": "^7.0.2007",
+    "oxlint-tsgolint": "^7.0.2008",
     "typescript": "^7.0.2"
   }
 }
