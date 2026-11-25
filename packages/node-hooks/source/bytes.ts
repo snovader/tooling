@@ -21,13 +21,23 @@ export const load: LoadHookSync = (urlString, context, nextLoad) => {
     };
 };
 
+/**
+ * Writes a module that reads the file when it's evaluated. The read is
+ * synchronous, since a module with a top-level `await` can't be loaded with
+ * `require()`. It goes through the default export of `node:fs`, which has
+ * what a preloaded script patched in, as Yarn PnP does to read its archives.
+ *
+ * Node reads a small file into the pool that its buffers share. The module
+ * copies those bytes, so that the array's buffer holds the file and nothing
+ * else. A larger file's buffer is the array's, without a copy.
+ */
 function createWrapperModule(urlString: string): string {
     const filePath = fileUrlToPath(urlString);
 
     return `
-        import { readFile } from 'node:fs/promises';
-        const nodeBuffer = await readFile(${JSON.stringify(filePath)});
-        const bytes = new Uint8Array(nodeBuffer.buffer, nodeBuffer.byteOffset, nodeBuffer.byteLength);
-        export default bytes;
+        import fs from 'node:fs';
+        const nodeBuffer = fs.readFileSync(${JSON.stringify(filePath)});
+        const ownsBuffer = nodeBuffer.byteLength === nodeBuffer.buffer.byteLength;
+        export default new Uint8Array(ownsBuffer ? nodeBuffer.buffer : nodeBuffer);
     `;
 }
