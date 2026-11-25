@@ -7,9 +7,7 @@ export default defineConfig({
         '.yarn',
         'packages/*/dist',
         // Yarn writes these in a format of its own
-        '**/package.json',
-        // Prose wrapped by hand
-        '**/*.md'
+        '**/package.json'
     ],
     sortImports: {
         ...oxfmt.sortImports,

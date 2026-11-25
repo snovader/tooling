@@ -71,6 +71,19 @@ function format(filename: string, source: string, cwd: string = consumer): strin
     });
 }
 
+/** Formats a file's text with another configuration of the consumer's */
+function formatWith(config: string, filename: string, source: string): string {
+    return succeed(process.execPath, [OXFMT, '--config', config, '--stdin-filepath', filename], {
+        cwd: consumer,
+        input: source
+    });
+}
+
+/** A file's text, of lines that each end in a line feed */
+function lines(...text: readonly string[]): string {
+    return `${text.join('\n')}\n`;
+}
+
 /** Writes an `oxlint.config.ts` that extends the base and the named presets */
 function configureOxlint(directory: string, presets: readonly string[] = []): void {
     const modules = ['oxlint', ...presets.map(preset => `oxlint/${preset}`)];
@@ -179,6 +192,135 @@ describe('packed oxfmt configuration', () => {
         assert.equal(
             format('example.yml', "jobs:\n    check:\n        steps:\n            - run: 'test'\n"),
             'jobs:\n  check:\n    steps:\n      - run: "test"\n'
+        );
+    });
+
+    it('wraps the prose of Markdown at 80 columns, and aligns its tables', () => {
+        const formatted = lines(
+            '# Title',
+            '',
+            'A paragraph of several sentences, which the formatter wraps at 80 columns. A',
+            "sentence that follows it fills the paragraph's last line.",
+            '',
+            '| Name    | What it holds                                                        |',
+            '| ------- | -------------------------------------------------------------------- |',
+            '| `first` | A cell that takes the table past 80 columns, since a row cannot wrap |',
+            '| `other` | `a \\| b`                                                             |',
+            '',
+            '1. A step, with a sample:',
+            '',
+            '   ```sh',
+            '   command --flag',
+            '   ```',
+            '',
+            '- An item of a list, whose text is long enough for it to wrap, and to indent by',
+            '  two spaces.',
+            '  - A nested item.',
+            '',
+            '  A second paragraph of the item.'
+        );
+        assert.equal(format('example.md', formatted), formatted);
+
+        assert.equal(
+            format(
+                'example.md',
+                lines(
+                    '# Title',
+                    'A paragraph of several sentences,',
+                    'which the formatter wraps at 80 columns.',
+                    "A sentence that follows it fills the paragraph's last line.",
+                    '',
+                    '| Name | What it holds |',
+                    '|---|---|',
+                    '| `first` | A cell that takes the table past 80 columns, since a row cannot wrap |',
+                    '| `other` | `a \\| b` |',
+                    '',
+                    '1. A step, with a sample:',
+                    '',
+                    '    ```sh',
+                    '    command --flag',
+                    '    ```',
+                    '',
+                    '* An item of a list, whose text is long enough for it to wrap, and to indent by two spaces.',
+                    '    * A nested item.',
+                    '',
+                    '    A second paragraph of the item.'
+                )
+            ),
+            formatted
+        );
+    });
+
+    it('leaves the fenced code of Markdown as it is written', () => {
+        const source = lines(
+            '```ts',
+            'export const partial = {a: "b",',
+            '```',
+            '',
+            '```json',
+            '{"a": 1,',
+            '        "b": 2}',
+            '```',
+            '',
+            '```yaml',
+            'jobs:',
+            "    - run: 'test'",
+            '```'
+        );
+        assert.equal(format('example.md', source), source);
+    });
+
+    // Why the configuration indents Markdown by two spaces, and leaves its
+    // fenced code: oxfmt formats the code with the options of the Markdown
+    // file, rather than with those of the code's own files, and with four
+    // spaces it indents an item's later blocks more than its first paragraph
+    it('cannot format fenced code by the options of its language', () => {
+        writeFileSync(
+            join(consumer, 'embedded.config.ts'),
+            "import oxfmt from '@snovader/oxc-config/oxfmt';\n\nexport default { ...oxfmt, overrides: [...oxfmt.overrides, { files: ['**/*.md'], options: { embeddedLanguageFormatting: 'auto' } }] };\n"
+        );
+        writeFileSync(
+            join(consumer, 'four-spaces.config.ts'),
+            "import oxfmt from '@snovader/oxc-config/oxfmt';\n\nexport default { ...oxfmt, overrides: [...oxfmt.overrides, { files: ['**/*.md'], options: { tabWidth: 4 } }] };\n"
+        );
+
+        assert.equal(
+            formatWith(
+                'embedded.config.ts',
+                'example.md',
+                lines(
+                    '```ts',
+                    'if (a) {',
+                    '    b("c");',
+                    '}',
+                    '```',
+                    '',
+                    '```yaml',
+                    'jobs:',
+                    '  - run: "test"',
+                    '```'
+                )
+            ),
+            lines(
+                '```ts',
+                'if (a) {',
+                "  b('c');",
+                '}',
+                '```',
+                '',
+                '```yaml',
+                'jobs:',
+                "  - run: 'test'",
+                '```'
+            )
+        );
+        assert.equal(
+            formatWith(
+                'four-spaces.config.ts',
+                'example.md',
+                lines('- A paragraph.', '', '  A second paragraph.')
+            ),
+            lines('- A paragraph.', '', '    A second paragraph.')
         );
     });
 

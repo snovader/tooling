@@ -46,6 +46,19 @@ const config = {
             // documentation writes them
             files: ['**/*.yml', '**/*.yaml'],
             options: { tabWidth: 2, singleQuote: false }
+        },
+        {
+            // Prose wraps at the print width, and tables align. A list's
+            // content indents by Markdown's own two spaces: with four, oxfmt
+            // indents an item's later blocks more than its first paragraph.
+            // Fenced code stays as it's written, since oxfmt would format it
+            // with these options, and not with those of the code's own files
+            files: ['**/*.md'],
+            options: {
+                proseWrap: 'always',
+                tabWidth: 2,
+                embeddedLanguageFormatting: 'off'
+            }
         }
     ]
 } satisfies OxfmtConfig;

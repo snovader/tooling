@@ -12,25 +12,24 @@ npm install @snovader/node-hooks
 ```
 
 Requires Node.js 24.12 or later. Earlier releases of Node 24 have no
-`--no-strip-types`, and before 24.6 Node passes the hooks no array of
-conditions for a `require()`, which the cache and PnP hooks read.
+`--no-strip-types`, and before 24.6 Node passes the hooks no array of conditions
+for a `require()`, which the cache and PnP hooks read.
 
 ## Why
 
 Node strips types with amaro, which is swc compiled to WebAssembly. Its memory
 grows for a file larger than about 1.2–1.7 KB, and growing it detaches an
 `ArrayBuffer`. Detaching any buffer invalidates V8's ArrayBufferDetaching
-protector for the rest of the process. From then on, optimized code checks
-every typed-array access for a detached buffer. This happens in Node 24.12,
-Node 26.13, and Node 27.0.0-alpha alike.
+protector for the rest of the process. From then on, optimized code checks every
+typed-array access for a detached buffer. This happens in Node 24.12, Node
+26.13, and Node 27.0.0-alpha alike.
 
 The TypeScript hook strips types with oxc's native transform instead, which
-detaches nothing. The package itself is compiled JavaScript, so registering
-it strips nothing either. In benchmarks of a binary-format reader run from
-source:
+detaches nothing. The package itself is compiled JavaScript, so registering it
+strips nothing either. In benchmarks of a binary-format reader run from source:
 
-- the reader's primitive getters took 0.65× as long in Node 26 and 0.62× in
-  Node 27;
+- the reader's primitive getters took 0.65× as long in Node 26 and 0.62× in Node
+  27;
 - its typed-array getters and setters took about 0.9× as long.
 
 To see whether a process has lost the protector, run it with
@@ -45,21 +44,20 @@ Register the hook when Node starts:
 node --no-strip-types --import @snovader/node-hooks/register app.ts
 ```
 
-The hook strips the types of `.ts`, `.mts`, and `.cts` files with
-`file:` URLs:
+The hook strips the types of `.ts`, `.mts`, and `.cts` files with `file:` URLs:
 
 - `.mts` files load as ES modules and `.cts` files as CommonJS.
 - `.ts` files follow their package's `type`.
 - A `.ts` file in a package without a `type` loads as an ES module.
-- Imports keep the names that aren't marked as types, as Node's stripping
-  does (`onlyRemoveTypeImports`).
+- Imports keep the names that aren't marked as types, as Node's stripping does
+  (`onlyRemoveTypeImports`).
 - Syntax that this version of Node supports stays as it is.
 - Invalid syntax fails the import with a `SyntaxError` and oxc's code frame.
 
-The hook strips the source that the next hook loads. A hook that runs after
-it can serve or change the TypeScript, such as one that generates a module.
-What the next hook loads as JavaScript, with the format `module` or
-`commonjs`, stays as it is.
+The hook strips the source that the next hook loads. A hook that runs after it
+can serve or change the TypeScript, such as one that generates a module. What
+the next hook loads as JavaScript, with the format `module` or `commonjs`, stays
+as it is.
 
 `--no-strip-types` keeps Node from stripping types itself, which it otherwise
 does a second time for CommonJS that an ES module imports (see
@@ -85,23 +83,23 @@ them.
 ### Differences from Node's stripping
 
 - oxc prints the code anew, so lines and columns in stack traces shift. With
-  `--enable-source-maps`, or `process.setSourceMapsEnabled(true)`, the hook
-  adds an inline source map, and stack traces show the TypeScript positions.
-- Where the source that the next hook loads ends with an inline source map,
-  the hook's map maps through it, even without `--enable-source-maps`. Node
-  reads only a module's last source map. Node's stripping keeps the positions
-  instead, so that the next hook's map stays valid.
+  `--enable-source-maps`, or `process.setSourceMapsEnabled(true)`, the hook adds
+  an inline source map, and stack traces show the TypeScript positions.
+- Where the source that the next hook loads ends with an inline source map, the
+  hook's map maps through it, even without `--enable-source-maps`. Node reads
+  only a module's last source map. Node's stripping keeps the positions instead,
+  so that the next hook's map stays valid.
 - oxc also compiles syntax that Node's stripping rejects, such as enums,
   namespaces, and parameter properties.
 - Files inside `node_modules` load as well, where Node refuses to strip them.
-- Node detects the syntax of a `.ts` file in a package without a `type`;
-  the hook loads it as an ES module.
+- Node detects the syntax of a `.ts` file in a package without a `type`; the
+  hook loads it as an ES module.
 - Neither checks types.
 
 ## Bytes
 
-`@snovader/node-hooks/bytes` loads a file imported with the `bytes` type as
-a module whose default export is a `Uint8Array` of the file's contents:
+`@snovader/node-hooks/bytes` loads a file imported with the `bytes` type as a
+module whose default export is a `Uint8Array` of the file's contents:
 
 ```js
 import { registerHooks } from 'node:module';
@@ -126,11 +124,10 @@ process, by specifier, importing directory, and conditions:
 - Import attributes aren't part of the key.
 - Built-in modules resolve without the hooks after it.
 
-Register it after the resolve hooks whose answers don't change, so that it
-runs before them. Register it before a hook whose answers change, such as
-one that mocks modules. Run before such a hook, it would keep the hook's
-first answer, and resolve built-ins without it (see
-[Composing hooks](#composing-hooks)).
+Register it after the resolve hooks whose answers don't change, so that it runs
+before them. Register it before a hook whose answers change, such as one that
+mocks modules. Run before such a hook, it would keep the hook's first answer,
+and resolve built-ins without it (see [Composing hooks](#composing-hooks)).
 
 ## Yarn Plug'n'Play
 
@@ -139,8 +136,8 @@ Yarn's ES module loader:
 
 - Packages resolve through their `exports`, and subpath imports through the
   `imports` of the importing package.
-- Outside an ES module package, a path without an extension tries `.js`,
-  `.ts`, `.json`, and `index` files.
+- Outside an ES module package, a path without an extension tries `.js`, `.ts`,
+  `.json`, and `index` files.
 - Files are read through `fs`, which Yarn's runtime patches to read its zip
   archives.
 
@@ -149,10 +146,10 @@ It needs:
 - Yarn's runtime, loaded with `--require ./.pnp.cjs`;
 - the optional peer dependency `resolve-pkg-maps`.
 
-Without Yarn's ES module loader, Node can't resolve this package by name from
-an ES module, nor import files from Yarn's archives. Resolve the package
-through `require`, which Yarn's runtime patches, and unplug it in
-`package.json`, so that its files are on disk:
+Without Yarn's ES module loader, Node can't resolve this package by name from an
+ES module, nor import files from Yarn's archives. Resolve the package through
+`require`, which Yarn's runtime patches, and unplug it in `package.json`, so
+that its files are on disk:
 
 ```json
 {
@@ -190,8 +187,8 @@ node --require ./.pnp.cjs --import ./register.mjs app.ts
 ## Composing hooks
 
 Node runs the hooks registered last first. Each hook either handles a module
-itself, or passes it to the next hook with `nextResolve` or `nextLoad`. What
-it handles, the hooks after it don't see:
+itself, or passes it to the next hook with `nextResolve` or `nextLoad`. What it
+handles, the hooks after it don't see:
 
 | Hook              | Handles                      | Passes on              |
 | ----------------- | ---------------------------- | ---------------------- |
@@ -207,17 +204,17 @@ above its imports, runs on either side of the TypeScript hook:
 - Registered before the TypeScript hook, it changes the TypeScript, and the
   TypeScript hook maps through its source map.
 - Registered after it, it changes the JavaScript. Its source map has to map
-  through the one that the TypeScript hook appended, or stack traces show
-  the positions in the JavaScript.
+  through the one that the TypeScript hook appended, or stack traces show the
+  positions in the JavaScript.
 
 ## Limitations
 
-- When an ES module imports CommonJS TypeScript, Node 26 and 27 strip the
-  hook's output again with amaro, which detaches a buffer for a large file.
-  This applies to `.cts` files, and to `.ts` files in a `commonjs` package.
+- When an ES module imports CommonJS TypeScript, Node 26 and 27 strip the hook's
+  output again with amaro, which detaches a buffer for a large file. This
+  applies to `.cts` files, and to `.ts` files in a `commonjs` package.
   `require()` doesn't do this, and `--no-strip-types` prevents it.
-- The hook depends on oxc's native binding, which `oxc-transform` installs
-  for common platforms. oxc's WebAssembly fallback hasn't been checked for
-  detached buffers.
+- The hook depends on oxc's native binding, which `oxc-transform` installs for
+  common platforms. oxc's WebAssembly fallback hasn't been checked for detached
+  buffers.
 - Windows paths, on drives and on UNC shares (`\\server\share`), have been
   tested only by simulating Windows on Linux and macOS, not on Windows.
