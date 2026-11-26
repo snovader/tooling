@@ -114,8 +114,37 @@ registerHooks({ load });
 import bytes from './image.png' with { type: 'bytes' };
 ```
 
-The module reads the file when it's evaluated. Unlike the TC39 Import Bytes
-proposal, the bytes aren't immutable.
+The module reads the file when it's evaluated, synchronously. So a module
+that imports bytes loads with `require()` as well as with `import`:
+
+```js
+// length.mjs
+import bytes from './image.png' with { type: 'bytes' };
+
+export default bytes.length;
+```
+
+```js
+// main.cjs
+console.log(require('./length.mjs').default);
+```
+
+- Every import of a file as bytes gives the same array, static or dynamic.
+  The file is read once.
+- The array's `buffer` holds the file's bytes and nothing else, from offset
+  0, so it's safe to pass on as an `ArrayBuffer`.
+- A file loads as bytes whatever its extension. Imported without the
+  attribute, or as `json`, the same file loads as Node loads it, as another
+  module.
+- A file that doesn't exist fails as any import does, with
+  `ERR_MODULE_NOT_FOUND`.
+- With the [PnP hooks](#yarn-plugnplay), the file can be in one of Yarn's zip
+  archives.
+
+Unlike the TC39 [Import Bytes](https://github.com/tc39/proposal-import-bytes)
+proposal, the bytes aren't immutable: a module that writes to the array
+changes it for every importer. No released version of Node loads the `bytes`
+type itself.
 
 ## Resolution cache
 

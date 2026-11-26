@@ -539,6 +539,138 @@ console.log(JSON.stringify({
     });
 });
 
+test('bytes hook loads a module that imports bytes with require() and import()', () => {
+    writeFiles(consumer, {
+        'bytes/blob.bin': Buffer.from([1, 2, 3]),
+        'bytes/length.mjs': `import bytes from './blob.bin' with { type: 'bytes' };
+
+export default bytes.length;
+`,
+        'bytes/require.cjs': `const required = require('./length.mjs').default;
+
+import('./blob.bin', { with: { type: 'bytes' } }).then(({ default: bytes }) => {
+    console.log(JSON.stringify({ required, imported: [...bytes] }));
+});
+`
+    });
+
+    // A wrapper with a top-level await fails here with ERR_REQUIRE_ASYNC_MODULE
+    assert.deepEqual(nodeJson(['--import', './bytes/register.mjs', 'bytes/require.cjs']), {
+        required: 3,
+        imported: [1, 2, 3]
+    });
+});
+
+test("bytes hook gives each file a plain Uint8Array over a buffer of the file's size", () => {
+    // Node reads a file of a few kilobytes into the pool that its buffers share
+    const sizes = [0, 5, 5000, 70_000];
+    writeFiles(consumer, {
+        ...Object.fromEntries(
+            sizes.map(size => [`bytes/sizes/${size}.bin`, Buffer.alloc(size, 7)])
+        ),
+        'bytes/sizes.mjs': `const sizes = ${JSON.stringify(sizes)};
+const described = [];
+
+for (const size of sizes) {
+    const { default: bytes } = await import(\`./sizes/\${size}.bin\`, { with: { type: 'bytes' } });
+    described.push({
+        plain: Object.getPrototypeOf(bytes) === Uint8Array.prototype,
+        length: bytes.length,
+        bufferLength: bytes.buffer.byteLength,
+        offset: bytes.byteOffset,
+        filled: bytes.every(value => value === 7)
+    });
+}
+
+console.log(JSON.stringify(described));
+`
+    });
+
+    assert.deepEqual(
+        nodeJson(['--import', './bytes/register.mjs', 'bytes/sizes.mjs']),
+        sizes.map(size => ({
+            plain: true,
+            length: size,
+            bufferLength: size,
+            offset: 0,
+            filled: true
+        }))
+    );
+});
+
+test('bytes hook reads files whose names need escaping in a URL or in source', () => {
+    const names = [
+        'sp ace.bin',
+        'qu\'o"te.bin',
+        'ha#sh.bin',
+        'per%cent.bin',
+        'per%20cent.bin',
+        'tick`${x}.bin',
+        'ünï✓.bin'
+    ];
+    writeFiles(consumer, {
+        ...Object.fromEntries(names.map(name => [`bytes/names/${name}`, `named ${name}`])),
+        'bytes/names.mjs': `import { pathToFileURL } from 'node:url';
+
+const names = ${JSON.stringify(names)};
+const texts = [];
+
+for (const name of names) {
+    const { href } = pathToFileURL(\`bytes/names/\${name}\`);
+    const { default: bytes } = await import(href, { with: { type: 'bytes' } });
+    texts.push(new TextDecoder().decode(bytes));
+}
+
+console.log(JSON.stringify(texts));
+`
+    });
+
+    assert.deepEqual(
+        nodeJson(['--import', './bytes/register.mjs', 'bytes/names.mjs']),
+        names.map(name => `named ${name}`)
+    );
+});
+
+test('bytes hook loads a file as bytes beside the same file as a module', () => {
+    const moduleSource = "export default 'evaluated';\n";
+    const jsonSource = '{ "key": "value" }\n';
+    writeFiles(consumer, {
+        'bytes/both/module.mjs': moduleSource,
+        'bytes/both/data.json': jsonSource,
+        'bytes/both/entry.mjs': `import moduleBytes from './module.mjs' with { type: 'bytes' };
+import evaluated from './module.mjs';
+import data from './data.json' with { type: 'json' };
+import dataBytes from './data.json' with { type: 'bytes' };
+
+const decoder = new TextDecoder();
+console.log(JSON.stringify({
+    evaluated,
+    moduleSource: decoder.decode(moduleBytes),
+    data,
+    jsonSource: decoder.decode(dataBytes)
+}));
+`
+    });
+
+    assert.deepEqual(nodeJson(['--import', './bytes/register.mjs', 'bytes/both/entry.mjs']), {
+        evaluated: 'evaluated',
+        moduleSource,
+        data: { key: 'value' },
+        jsonSource
+    });
+});
+
+test("bytes hook leaves a missing file to Node's resolution, which reports it", () => {
+    writeFiles(consumer, {
+        'bytes/missing.mjs': "import bytes from './missing.bin' with { type: 'bytes' };\n"
+    });
+
+    const result = node(['--import', './bytes/register.mjs', 'bytes/missing.mjs']);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /ERR_MODULE_NOT_FOUND/);
+    assert.match(result.stderr, /missing\.bin/);
+});
+
 /**
  * Runs the PnP resolve hook on Windows or POSIX paths on any platform. The
  * hooks choose by `process.platform`, which the probe sets before importing
@@ -813,7 +945,9 @@ test("Yarn PnP projects load TypeScript, and the PnP hooks resolve packages' exp
                 nameless: 'file:./nameless',
                 'resolve-pkg-maps': '^1.0.0',
                 // TypeScript in Yarn's zip archive, which the PnP load hook reads
-                typed: 'file:./typed'
+                typed: 'file:./typed',
+                // A file in the archive, for the bytes hook
+                blob: 'file:./blob'
             },
             dependenciesMeta: {
                 '@snovader/node-hooks': { unplugged: true }
@@ -846,6 +980,29 @@ test("Yarn PnP projects load TypeScript, and the PnP hooks resolve packages' exp
             exports: './index.ts'
         },
         'typed/index.ts': "const typed: string = 'typed';\nexport default typed;\n",
+        'blob/package.json': {
+            name: 'blob',
+            version: '1.0.0',
+            exports: { './data.dat': './data.dat' }
+        },
+        'blob/data.dat': 'archived',
+        'bytes.mjs': `import { registerHooks } from 'node:module';
+import { importHooks } from './import-hooks.mjs';
+
+const pnp = await importHooks('pnp');
+const bytes = await importHooks('bytes');
+registerHooks({ resolve: pnp.resolve, load: pnp.load });
+registerHooks({ load: bytes.load });
+`,
+        'archived.mjs': `import bytes from 'blob/data.dat' with { type: 'bytes' };
+
+export default new TextDecoder().decode(bytes);
+export const inArchive = import.meta.resolve('blob/data.dat').includes('.zip/');
+`,
+        'archived.cjs': `const { default: text, inArchive } = require('./archived.mjs');
+
+console.log(JSON.stringify({ text, inArchive }));
+`,
         // Only Yarn's CommonJS runtime runs, so the hooks are imported by path
         'import-hooks.mjs': `import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
@@ -926,5 +1083,13 @@ console.log(JSON.stringify(names.map(name => require.resolve(\`@snovader/node-ho
             nameless: 'nameless',
             typed: 'typed'
         }
+    );
+
+    // Yarn's runtime patches fs, through which the bytes module reads the archive
+    assert.deepEqual(
+        nodeJson(['--require', './.pnp.cjs', '--import', './bytes.mjs', 'archived.cjs'], {
+            cwd: directory
+        }),
+        { text: 'archived', inArchive: true }
     );
 });
