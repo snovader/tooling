@@ -47,8 +47,8 @@ the base does not restate `strict` or `noUncheckedSideEffectImports`. Set them
 locally when type checking with an older compiler.
 
 TypeScript 7's `lib.dom.iterable`, `lib.dom.asynciterable`,
-`lib.webworker.iterable` and `lib.webworker.asynciterable` are empty, so the
-web and isomorphic presets list only `DOM` and `WebWorker`; iteration over DOM
+`lib.webworker.iterable` and `lib.webworker.asynciterable` are empty, so the web
+and isomorphic presets list only `DOM` and `WebWorker`; iteration over DOM
 collections and streams is typed by those libraries.
 
 The base also turns these warnings into errors:
@@ -63,8 +63,8 @@ The base also turns these warnings into errors:
 `erasableSyntaxOnly` rejects `enum` declarations, namespaces and modules with
 runtime code, parameter properties, `import =` and `export =` assignments, and
 angle-bracket type assertions such as `<number>value`. The remaining syntax can
-be stripped without transformation, as Node.js type stripping does. To use
-those constructs, turn it off locally:
+be stripped without transformation, as Node.js type stripping does. To use those
+constructs, turn it off locally:
 
 ```json
 {
@@ -94,8 +94,8 @@ These are consumer dependencies, not dependencies of this config package.
 
 ## Emitting JavaScript
 
-To compile to JavaScript, turn `noEmit` off and let TypeScript rewrite the
-`.ts` import extensions that the base allows:
+To compile to JavaScript, turn `noEmit` off and let TypeScript rewrite the `.ts`
+import extensions that the base allows:
 
 ```json
 {
@@ -132,8 +132,8 @@ environment preset in each referenced project:
 
 The composite preset has no `extends` of its own. It sets `composite: true`,
 `emitDeclarationOnly: true` and `noEmit: false`, so `tsc --build` writes
-declaration files and build information, and `.ts` imports stay allowed. Keep
-it last: listed before the environment preset, the base's `noEmit` wins and
+declaration files and build information, and `.ts` imports stay allowed. Keep it
+last: listed before the environment preset, the base's `noEmit` wins and
 TypeScript writes only build information. For JavaScript output as well, add
 `emitDeclarationOnly: false` and `rewriteRelativeImportExtensions: true`.
 
@@ -171,9 +171,9 @@ yarn unplug @snovader/tsconfig
 yarn node -e "require('node:fs').cpSync(require('node:path').dirname(require.resolve('@snovader/tsconfig/base')), '.cache/tsconfig', { recursive: true })"
 ```
 
-Then extend `./.cache/tsconfig/tsconfig.base.json` or another preset's file
-from the table above, adjusting the relative path for nested configs. Run the
-copy after package updates and ignore `.cache/` in Git. This only makes the
+Then extend `./.cache/tsconfig/tsconfig.base.json` or another preset's file from
+the table above, adjusting the relative path for nested configs. Run the copy
+after package updates and ignore `.cache/` in Git. This only makes the
 configuration available: resolving other PnP dependencies still depends on the
 compiler used by the consumer. A compiler build with PnP support can extend the
 subpaths directly; check with `tsc --showConfig` before adding the copy, and

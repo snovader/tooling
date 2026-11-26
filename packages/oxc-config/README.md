@@ -1,8 +1,7 @@
 # @snovader/oxc-config
 
-Shared configuration for oxfmt 0.79 and oxlint 1.94, with presets for
-Vitest, hypotes and Preact, and a plugin with a rule that sorts the names
-of imports.
+Shared configuration for oxfmt 0.79 and oxlint 1.94, with presets for Vitest,
+hypotes and Preact, and a plugin with a rule that sorts the names of imports.
 
 ```sh
 yarn add --dev @snovader/oxc-config oxfmt oxlint oxlint-tsgolint
@@ -23,19 +22,36 @@ import { defineConfig } from 'oxfmt';
 
 export default defineConfig({
     ...oxfmt,
-    ignorePatterns: ['.yarn', 'dist', '**/package.json', '**/*.md'],
+    ignorePatterns: ['.yarn', 'dist', '**/package.json'],
     sortImports: { ...oxfmt.sortImports, internalPattern: ['my-package'] }
 });
 ```
 
 It indents by four spaces, with single quotes, semicolons, no trailing commas,
 parentheses around arrow functions' parameters only where needed, and double
-quotes in JSX. Lines wrap at 80 columns, tests (`*.test.ts` and `*.test.tsx`)
-at 100, and TypeScript configurations at 60. YAML indents by two spaces, with
-double quotes. Imports are sorted: Node's modules, other packages, the
-project's packages by the names that they export, then by their private paths,
-then relative paths, nearest last. Add `overrides` after `...oxfmt.overrides`
-to keep the shared ones.
+quotes in JSX. Lines wrap at 80 columns, tests (`*.test.ts` and `*.test.tsx`) at
+100, and TypeScript configurations at 60. YAML indents by two spaces, with
+double quotes. Imports are sorted: Node's modules, other packages, the project's
+packages by the names that they export, then by their private paths, then
+relative paths, nearest last. Add `overrides` after `...oxfmt.overrides` to keep
+the shared ones.
+
+Markdown (`*.md`) is formatted too:
+
+- Prose wraps at 80 columns, so that nobody wraps it by hand. A renderer that
+  keeps a paragraph's line breaks, such as GitHub's for comments, shows them: a
+  project with such files ignores them, or sets
+  [`proseWrap`](https://oxc.rs/docs/guide/usage/formatter/config-file-reference.html#prosewrap)
+  for them.
+- Tables align their columns. A table with a wide cell goes past 80 columns,
+  since a row can't wrap.
+- A list's content indents by two spaces, or to the width of its number. With
+  four, oxfmt indents the later blocks of an item more than its first paragraph.
+- Fenced code stays as it's written. oxfmt would format it with Markdown's
+  options, at two spaces, and not with those of the code's own files, so format
+  a sample in a file of its language before pasting it.
+
+A project that wraps its prose by hand ignores `**/*.md`.
 
 ## oxlint
 
@@ -59,18 +75,16 @@ overrides. The project's own `rules` and `overrides` come last.
 
 - `oxlint`: every rule of the correctness, suspicious, pedantic and perf
   categories of the eslint, typescript, unicorn, oxc, import, jsdoc and promise
-  plugins, with type-aware rules and unused disable directives reported, and
-  a selection of style and restriction rules. The rules that TypeScript
-  reports itself are off, and so are those that limit length or require
-  JSDoc tags for every parameter. Files are named in kebab-case, whatever
-  they export, so that an import path reads the same on file systems that
-  ignore case: a project with other names renames its files, or turns
-  `unicorn/filename-case` off for them. Each setting has a comment that says
-  why.
-  Configuration files (`*.config.ts`) may export defaults, tests may assign
-  values typed `any`, such as `expect.any()`, and pass callbacks that return
-  values where nothing is returned, and JavaScript files don't need
-  `readonly`.
+  plugins, with type-aware rules and unused disable directives reported, and a
+  selection of style and restriction rules. The rules that TypeScript reports
+  itself are off, and so are those that limit length or require JSDoc tags for
+  every parameter. Files are named in kebab-case, whatever they export, so that
+  an import path reads the same on file systems that ignore case: a project with
+  other names renames its files, or turns `unicorn/filename-case` off for them.
+  Each setting has a comment that says why. Configuration files (`*.config.ts`)
+  may export defaults, tests may assign values typed `any`, such as
+  `expect.any()`, and pass callbacks that return values where nothing is
+  returned, and JavaScript files don't need `readonly`.
 - `oxlint/vitest`: oxlint's rules for tests that import from `vitest`, where
   helpers whose names start with `expect` count as assertions.
   `vitest/require-mock-type-parameters` is off, as it also asks for type
@@ -80,20 +94,20 @@ overrides. The project's own `rules` and `overrides` come last.
   the plugin that it publishes. Install `hypotes` 0.3.
 - `oxlint/preact`: the rules of hooks, exhaustive dependencies, keys in lists,
   and self-closing elements, with the react plugin's other rules of the base's
-  categories. `react-in-jsx-scope` is off, as the compiler imports Preact's
-  JSX runtime, and so is `immutability`, which takes a write to a signal's
-  `.value` for a change to what a hook returned.
+  categories. `react-in-jsx-scope` is off, as the compiler imports Preact's JSX
+  runtime, and so is `immutability`, which takes a write to a signal's `.value`
+  for a change to what a hook returned.
 
-Keep ignored paths, restricted imports, and the rules that a project turns
-off for reasons of its own in the project's configuration.
+Keep ignored paths, restricted imports, and the rules that a project turns off
+for reasons of its own in the project's configuration.
 
 ### Signals and exhaustive dependencies
 
-oxlint's `react/exhaustive-deps` takes only `additionalHooks`, and has no way
-to mark a hook's result as stable. It reports a signal from `useSignal` or
-`useComputed` that a callback, effect or memo reads but doesn't list. List
-the signal itself, which stays the same from one render to the next, rather
-than its `.value`, which would subscribe the component to it:
+oxlint's `react/exhaustive-deps` takes only `additionalHooks`, and has no way to
+mark a hook's result as stable. It reports a signal from `useSignal` or
+`useComputed` that a callback, effect or memo reads but doesn't list. List the
+signal itself, which stays the same from one render to the next, rather than its
+`.value`, which would subscribe the component to it:
 
 ```tsx
 const url = useSignal('/');
@@ -109,18 +123,18 @@ const route = useCallback(
 
 `eslint/eqeqeq` requires `===` and `!==`, except in a comparison with `null`.
 `value == null` matches both null and undefined, so use it, or `!= null`, to
-check for a missing value. Compare strictly only where null and undefined
-mean different things. No rule reports a strict comparison with null.
+check for a missing value. Compare strictly only where null and undefined mean
+different things. No rule reports a strict comparison with null.
 
 `typescript/strict-boolean-expressions` accepts a nullable boolean, number or
-string as a condition, and an `any`. It reports an object that is always
-truthy. `typescript/prefer-nullish-coalescing` still reports `name || 'none'`
-on a nullable `name`, as `??` tells an empty string from a missing one.
+string as a condition, and an `any`. It reports an object that is always truthy.
+`typescript/prefer-nullish-coalescing` still reports `name || 'none'` on a
+nullable `name`, as `??` tells an empty string from a missing one.
 
 ## Rules that the base turns off
 
-Besides the rules that TypeScript reports itself, and those that limit
-length or require JSDoc tags, the base turns these off:
+Besides the rules that TypeScript reports itself, and those that limit length or
+require JSDoc tags, the base turns these off:
 
 | Rule                            | Why                                                                       |
 | ------------------------------- | ------------------------------------------------------------------------- |
@@ -149,22 +163,22 @@ them.
 
 ## Array types and return types
 
-`typescript/array-type` uses `T[]` and `readonly T[]` for arrays of keywords,
-of names without type arguments, and of arrays of those, and `Array<T>` and
+`typescript/array-type` uses `T[]` and `readonly T[]` for arrays of keywords, of
+names without type arguments, and of arrays of those, and `Array<T>` and
 `ReadonlyArray<T>` for the rest: `number[][]` and `readonly string[]`, but
 `Array<string | number>`. Its fix rewrites the type.
 
 `typescript/explicit-function-return-type` requires return types on function
 declarations, class members, overrides included, and functions bound to
-variables. It doesn't require them on callbacks, on functions whose type
-comes from where they appear, such as a typed variable, on the members of an
-object literal without a type, or in JavaScript files.
+variables. It doesn't require them on callbacks, on functions whose type comes
+from where they appear, such as a typed variable, on the members of an object
+literal without a type, or in JavaScript files.
 
 ## Yarn Plug'n'Play
 
-oxlint and oxfmt import the configurations through Yarn PnP. oxlint can't load
-a plugin from Yarn's zip archives, so the base names the plugin by its path in
-the installed package, and the package asks Yarn to unpack it with
+oxlint and oxfmt import the configurations through Yarn PnP. oxlint can't load a
+plugin from Yarn's zip archives, so the base names the plugin by its path in the
+installed package, and the package asks Yarn to unpack it with
 `preferUnplugged`. hypotes doesn't, so a project that extends `oxlint/hypotes`
 unplugs it:
 
@@ -176,8 +190,8 @@ unplugs it:
 }
 ```
 
-tsgolint can't resolve packages through PnP, so the type-aware rules see what
-a module imports from a package as an error type.
+tsgolint can't resolve packages through PnP, so the type-aware rules see what a
+module imports from a package as an error type.
 
 ## License
 
