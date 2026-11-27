@@ -64,7 +64,7 @@
         "prepack": "node scripts/require-yarn.ts && yarn build"
     },
     "dependencies": {
-        "oxc-transform": "^0.159.0"
+        "oxc-transform": "^0.160.0"
     },
     "peerDependencies": {
         "resolve-pkg-maps": "^1.0.0"
